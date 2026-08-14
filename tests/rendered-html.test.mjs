@@ -22,10 +22,14 @@ test("server-renders the RAG FOR ALL workspace", async () => {
   const html = await response.text();
   assert.match(html, /<title>RAG FOR ALL/);
   assert.match(html, /See what your RAG is thinking/);
-  assert.match(html, /Experiment[\s\S]{0,40}A/);
-  assert.match(html, /Choose a document/);
+  assert.match(html, /RAG, with the lights on/);
+  assert.match(html, /THE COMPLETE RAG JOURNEY/);
+  assert.match(html, /Click any step to look inside/);
+  assert.match(html, /Start with a document/);
+  assert.match(html, /Open Document step/);
+  assert.match(html, /THE LEARNING LOOP/);
+  assert.match(html, /two pipelines/);
   assert.match(html, /Northstar Handbook/);
-  assert.match(html, /Parsing begins locally/);
   assert.doesNotMatch(html, /codex-preview/);
   assert.doesNotMatch(html, /react-loading-skeleton/);
 });
@@ -41,4 +45,8 @@ test("keeps API credentials out of client source", async () => {
   assert.doesNotMatch(source, /sk-[a-zA-Z0-9_-]{20,}/);
   assert.doesNotMatch(source, /OPENAI_API_KEY\s*=/);
   assert.doesNotMatch(source, /_sites-preview|SkeletonPreview/);
+  assert.match(studio, /WHAT HAPPENS/);
+  assert.match(studio, /WHY IT MATTERS/);
+  assert.match(studio, /FROM THE LAST STEP/);
+  assert.match(studio, /WATCH FOR/);
 });

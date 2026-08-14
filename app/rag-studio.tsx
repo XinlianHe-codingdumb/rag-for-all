@@ -20,7 +20,7 @@ import type {
   RankedChunk,
 } from "./lib/rag-types";
 
-type StepKey = "upload" | "parse" | "chunk" | "embed" | "retrieve" | "rerank" | "prompt" | "answer" | "compare";
+type StepKey = "overview" | "upload" | "parse" | "chunk" | "embed" | "retrieve" | "rerank" | "prompt" | "answer" | "compare";
 type ExperimentName = "A" | "B";
 type ApiStatus = {
   openaiConfigured: boolean;
@@ -29,17 +29,91 @@ type ApiStatus = {
   persistenceConfigured: boolean;
 };
 
-const STEPS: Array<{ key: StepKey; number: string; title: string; note: string }> = [
-  { key: "upload", number: "01", title: "Document", note: "Bring the knowledge" },
-  { key: "parse", number: "02", title: "Parse", note: "Turn files into text" },
-  { key: "chunk", number: "03", title: "Chunk", note: "Cut, but with manners" },
-  { key: "embed", number: "04", title: "Embed", note: "Meaning becomes math" },
-  { key: "retrieve", number: "05", title: "Retrieve", note: "Find the useful bits" },
-  { key: "rerank", number: "06", title: "Rerank", note: "Put the best first" },
-  { key: "prompt", number: "07", title: "Prompt", note: "Pack the context" },
-  { key: "answer", number: "08", title: "Answer", note: "Let the model speak" },
-  { key: "compare", number: "A/B", title: "Compare", note: "Receipts, not vibes" },
+const STEPS: Array<{ key: Exclude<StepKey, "overview">; number: string; title: string; note: string; icon: string }> = [
+  { key: "upload", number: "01", title: "Document", note: "Bring the knowledge", icon: "□" },
+  { key: "parse", number: "02", title: "Parse", note: "Turn files into text", icon: "¶" },
+  { key: "chunk", number: "03", title: "Chunk", note: "Cut, but with manners", icon: "//" },
+  { key: "embed", number: "04", title: "Embed", note: "Meaning becomes math", icon: "⠿" },
+  { key: "retrieve", number: "05", title: "Retrieve", note: "Find the useful bits", icon: "?" },
+  { key: "rerank", number: "06", title: "Rerank", note: "Put the best first", icon: "↕" },
+  { key: "prompt", number: "07", title: "Prompt", note: "Pack the context", icon: "{}" },
+  { key: "answer", number: "08", title: "Answer", note: "Let the model speak", icon: "✦" },
+  { key: "compare", number: "A/B", title: "Compare", note: "Receipts, not vibes", icon: "⇄" },
 ];
+
+type StepGuideEntry = {
+  what: string;
+  why: string;
+  connection: string;
+  watch: string;
+  technical: string;
+};
+
+const STEP_GUIDES: Record<Exclude<StepKey, "overview">, StepGuideEntry> = {
+  upload: {
+    what: "Choose the source document that contains the knowledge your assistant should use.",
+    why: "RAG needs a source of truth. Without one, the model is answering from memory instead of evidence.",
+    connection: "This is the starting line. The file you choose becomes the raw input for parsing.",
+    watch: "Use the right version, remove secrets you do not need, and remember that scanned PDFs may need OCR.",
+    technical: "Supported now: text PDF, DOCX, TXT, and Markdown up to 20 MB.",
+  },
+  parse: {
+    what: "Extract readable text and page boundaries from the uploaded file.",
+    why: "Retrieval cannot search a PDF layout or a Word container directly; it needs clean text first.",
+    connection: "The original file becomes page-aware text. That text is what the chunker receives next.",
+    watch: "Look for missing pages, broken characters, flattened tables, empty scans, or headings that lost their structure.",
+    technical: "A clean parser report is necessary, but it does not guarantee that every table or visual survived.",
+  },
+  chunk: {
+    what: "Split the parsed text into small, partly overlapping pieces called chunks.",
+    why: "Models retrieve and read focused passages better than one giant document. Chunking creates those searchable units.",
+    connection: "Parsed text is cut into chunks; each chunk keeps its source page so later citations still work.",
+    watch: "Too small loses context, too large adds noise, and too much overlap repeats the same evidence and costs tokens.",
+    technical: "Change size, overlap, or strategy and watch the real BPE token boundaries update immediately.",
+  },
+  embed: {
+    what: "Convert every chunk—and later the question—into a numeric vector that represents its meaning.",
+    why: "Vectors let the system match ideas even when the question and document use different words.",
+    connection: "Each chunk becomes one point in meaning-space. Retrieval compares the question vector with those points.",
+    watch: "The 2D map is only a projection. Nearby dots are a clue, not proof that two passages mean the same thing.",
+    technical: "This build can compare OpenAI embeddings with a local TF-IDF fallback.",
+  },
+  retrieve: {
+    what: "Search all chunks and keep the Top K passages most related to the user’s question.",
+    why: "The answer model should see the smallest useful evidence set, not the whole document and not a lucky guess.",
+    connection: "The question is compared with embedded chunks. The winners become candidates for reranking and prompting.",
+    watch: "Top K that is too low can miss evidence; too high can bury the answer in irrelevant context.",
+    technical: "Vector finds semantic similarity, Keyword finds exact terms, and Hybrid mixes both signals.",
+  },
+  rerank: {
+    what: "Reorder the retrieved candidates so the strongest evidence appears first.",
+    why: "First-pass retrieval is fast, not perfect. A second look can rescue a useful chunk from the bottom of the shortlist.",
+    connection: "Retrieval supplies the shortlist; reranking changes its order before context is sent to the model.",
+    watch: "A high score is still a similarity signal, not a factuality guarantee. Read the chunk, not just the percentage.",
+    technical: "Use Advanced mode to inspect the vector and keyword contribution behind each result.",
+  },
+  prompt: {
+    what: "Pack instructions, retrieved chunks, source labels, and the user’s question into one final model request.",
+    why: "The model can only ground its answer in evidence that actually reaches this payload.",
+    connection: "Ranked chunks become the context window. The answer step receives exactly what you see here.",
+    watch: "Check missing evidence, conflicting passages, token growth, weak instructions, and accidental sensitive text.",
+    technical: "Prompt inspection is the receipt: no invisible context and no mystery system message.",
+  },
+  answer: {
+    what: "Ask the language model to answer from the supplied context and attach chunk citations.",
+    why: "Generation turns retrieved evidence into a useful response, while citations keep the response auditable.",
+    connection: "The final prompt goes to the model; the answer should point back to chunks from the original document.",
+    watch: "Fluent is not the same as correct. Verify amounts, dates, exceptions, and every cited claim against the source.",
+    technical: "If OpenAI is unavailable, the app clearly labels its local extractive fallback instead of pretending.",
+  },
+  compare: {
+    what: "Run the same document and question through two different RAG configurations.",
+    why: "RAG quality comes from trade-offs. A/B comparison replaces intuition with visible evidence and token costs.",
+    connection: "Experiments A and B reuse the full pipeline but change chunking or retrieval settings.",
+    watch: "Do not crown a winner from one question. Test easy, ambiguous, exact-term, and multi-part questions.",
+    technical: "Compare match strength, chunks returned, and context tokens before deciding which setup earns its keep.",
+  },
+};
 
 const SAMPLE_PAGES = [
   `Northstar Coffee is a fictional company with a very real obsession: making office coffee less tragic. The company was founded in Singapore in 2022 and now operates small coffee bars inside twelve shared offices.
@@ -75,7 +149,7 @@ const DEFAULTS: Record<ExperimentName, PipelineConfig> = {
 };
 
 export function RagStudio() {
-  const [activeStep, setActiveStep] = useState<StepKey>("upload");
+  const [activeStep, setActiveStep] = useState<StepKey>("overview");
   const [mode, setMode] = useState<"Basic" | "Advanced">("Basic");
   const [activeExperiment, setActiveExperiment] = useState<ExperimentName>("A");
   const [experiments, setExperiments] = useState(DEFAULTS);
@@ -85,7 +159,7 @@ export function RagStudio() {
   const [embeddingKey, setEmbeddingKey] = useState("");
   const [answer, setAnswer] = useState<AnswerState | null>(null);
   const [apiStatus, setApiStatus] = useState<ApiStatus | null>(null);
-  const [notice, setNotice] = useState("Sample project is ready. Upload your own document whenever you like.");
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [pipelineRan, setPipelineRan] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -313,8 +387,9 @@ export function RagStudio() {
     setActiveStep("parse");
   };
 
-  const activeMeta = STEPS.find((step) => step.key === activeStep)!;
+  const activeMeta = activeStep === "overview" ? null : STEPS.find((step) => step.key === activeStep)!;
   const completed = (step: StepKey) => {
+    if (step === "overview") return true;
     if (step === "upload" || step === "parse" || step === "chunk") return Boolean(document);
     if (["embed", "retrieve", "rerank", "prompt"].includes(step)) return pipelineRan;
     if (step === "answer") return Boolean(answer);
@@ -324,15 +399,15 @@ export function RagStudio() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <div className="brand-lockup">
+        <button type="button" className="brand-lockup brand-button" onClick={() => setActiveStep("overview")} aria-label="Open RAG overview">
           <div className="brand-mark">R</div>
           <div><strong>RAG FOR ALL</strong><span>See what your RAG is thinking.</span></div>
-        </div>
+        </button>
         <div className="top-actions">
           <div className={`privacy-pill ${apiStatus?.openaiConfigured ? "connected" : ""}`}>
             <i /> {apiStatus?.openaiConfigured ? "OpenAI connected" : "Local mode"}
           </div>
-          <button className="quiet-button" type="button" onClick={() => setNotice("The plain-English guide will grow with each real pipeline step.")}>Guide</button>
+          <button className="quiet-button" type="button" onClick={() => setActiveStep("overview")}>Guide</button>
           <button className="avatar" type="button" aria-label="Open profile">XL</button>
         </div>
       </header>
@@ -345,6 +420,11 @@ export function RagStudio() {
             <small>{document?.name ?? "Upload to begin"}</small>
           </div>
           <nav aria-label="RAG pipeline">
+            <button type="button" className={`nav-step overview-nav ${activeStep === "overview" ? "active" : ""}`} onClick={() => setActiveStep("overview")}>
+              <span className="step-number">00</span>
+              <span className="step-copy"><strong>Overview</strong><small>See the whole journey</small></span>
+              <span className="step-state">⌂</span>
+            </button>
             <p className="nav-label">PIPELINE</p>
             {STEPS.map((step) => (
               <button type="button" key={step.key} className={`nav-step ${activeStep === step.key ? "active" : ""}`} onClick={() => setActiveStep(step.key)}>
@@ -356,7 +436,7 @@ export function RagStudio() {
           </nav>
           <div className="sidebar-footer">
             <button type="button" onClick={() => setActiveStep("compare")}><span>⌁</span> Experiment history</button>
-            <button type="button" onClick={() => setNotice("Blue labels explain what changes; gray labels explain why it matters.")}><span>?</span> Plain-English guide</button>
+            <button type="button" onClick={() => setActiveStep("overview")}><span>?</span> Plain-English guide</button>
           </div>
         </aside>
 
@@ -364,29 +444,38 @@ export function RagStudio() {
           {notice && <div className="notice-bar"><span>{notice}</span><button type="button" onClick={() => setNotice("")}>Dismiss</button></div>}
           {busy && <div className="busy-bar" role="status"><i />{busy}</div>}
 
-          <div className="content-header">
-            <div>
-              <p className="eyebrow">STEP {activeMeta.number} · {activeMeta.note.toUpperCase()}</p>
-              <h1>{activeMeta.title}</h1>
-              <p>{stepIntro(activeStep)}</p>
+          {activeStep === "overview" ? (
+            <OverviewPage
+              document={document}
+              onStep={setActiveStep}
+              onStart={() => setActiveStep(document && document.id !== SAMPLE_DOCUMENT.id ? "parse" : "upload")}
+            />
+          ) : <>
+            <div className="content-header">
+              <div>
+                <p className="eyebrow">STEP {activeMeta!.number} · {activeMeta!.note.toUpperCase()}</p>
+                <h1>{activeMeta!.title}</h1>
+                <p>{stepIntro(activeStep)}</p>
+              </div>
+              <div className="mode-switch" aria-label="Interface mode">
+                {(["Basic", "Advanced"] as const).map((item) => <button key={item} type="button" className={mode === item ? "selected" : ""} onClick={() => setMode(item)}>{item}</button>)}
+              </div>
             </div>
-            <div className="mode-switch" aria-label="Interface mode">
-              {(["Basic", "Advanced"] as const).map((item) => <button key={item} type="button" className={mode === item ? "selected" : ""} onClick={() => setMode(item)}>{item}</button>)}
-            </div>
-          </div>
 
-          <div className="experiment-bar">
-            <div className="experiment-tabs">
-              {(["A", "B"] as const).map((item) => (
-                <button key={item} type="button" className={activeExperiment === item ? "active" : ""} onClick={() => setActiveExperiment(item)}>
-                  Experiment {item}<small>{item === "A" ? "Baseline" : "Challenger"}</small>
-                </button>
-              ))}
-            </div>
-            <button className="run-button" type="button" onClick={() => void runPipeline()} disabled={Boolean(busy) || !document}><span>▶</span>{busy ? "Working…" : "Run pipeline"}</button>
-          </div>
+            <StepGuide step={activeStep} mode={mode} />
 
-          <div className="stage">
+            <div className="experiment-bar">
+              <div className="experiment-tabs">
+                {(["A", "B"] as const).map((item) => (
+                  <button key={item} type="button" className={activeExperiment === item ? "active" : ""} onClick={() => setActiveExperiment(item)}>
+                    Experiment {item}<small>{item === "A" ? "Baseline" : "Challenger"}</small>
+                  </button>
+                ))}
+              </div>
+              <button className="run-button" type="button" onClick={() => void runPipeline()} disabled={Boolean(busy) || !document}><span>▶</span>{busy ? "Working…" : "Run pipeline"}</button>
+            </div>
+
+            <div className="stage">
             {activeStep === "upload" && (
               <section className="upload-stage">
                 <div className="drop-zone" onClick={chooseFile} onDrop={onDrop} onDragOver={(event) => event.preventDefault()} role="button" tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") chooseFile(); }}>
@@ -516,11 +605,81 @@ export function RagStudio() {
                 <div className="verdict"><div className="verdict-icon">↗</div><div><span>READ THE TRADE-OFF</span><strong>{comparisonVerdict(comparisons)}</strong><p>Better retrieval is not always the configuration with the most context. Extra tokens are not a personality trait.</p></div></div>
               </section>
             )}
-          </div>
+            </div>
+          </>}
         </section>
       </div>
     </main>
   );
+}
+
+function OverviewPage({ document, onStep, onStart }: { document: ParsedDocument | null; onStep: (step: StepKey) => void; onStart: () => void }) {
+  const ownDocument = Boolean(document && document.id !== SAMPLE_DOCUMENT.id);
+  const mainSteps = STEPS.filter((step) => step.key !== "compare");
+  const compareStep = STEPS.find((step) => step.key === "compare")!;
+
+  return <section className="overview-page">
+    <div className="overview-hero">
+      <div className="overview-copy">
+        <p className="eyebrow">A VISUAL LAB FOR RETRIEVAL-AUGMENTED GENERATION</p>
+        <h1>RAG, with the lights on.</h1>
+        <p className="overview-lede">Upload a document, then follow its journey from raw file to cited answer. Every node below opens a real working step—so you can change the machinery and see what moves.</p>
+        <div className="overview-actions">
+          <button type="button" className="overview-primary" onClick={onStart}>{ownDocument ? "Continue your pipeline" : "Start with a document"}<span>→</span></button>
+          {!ownDocument && document && <button type="button" className="overview-secondary" onClick={() => onStep("parse")}>Explore the sample <span>↗</span></button>}
+        </div>
+      </div>
+      <div className="overview-principle" aria-label="RAG in one sentence">
+        <div className="principle-orbit"><i /><i /><i /></div>
+        <span>THE BIG IDEA</span>
+        <strong>Find evidence first.<br />Write the answer second.</strong>
+        <p>That one ordering is what keeps RAG useful—and inspectable.</p>
+      </div>
+    </div>
+
+    <div className="flow-lab">
+      <div className="flow-lab-head">
+        <div><span>THE COMPLETE RAG JOURNEY</span><h2>Click any step to look inside.</h2></div>
+        <p><i /> What changes at each hand-off?</p>
+      </div>
+      <ol className="flow-map" aria-label="Interactive RAG pipeline map">
+        {mainSteps.map((step) => <li key={step.key}>
+          <button type="button" className="flow-node" onClick={() => onStep(step.key)} aria-label={`Open ${step.title} step`}>
+            <span className="flow-node-top"><small>{step.number}</small><i>{step.icon}</i></span>
+            <strong>{step.title}</strong>
+            <span>{step.note}</span>
+          </button>
+        </li>)}
+      </ol>
+      <div className="compare-branch">
+        <div className="branch-line"><i /></div>
+        <button type="button" onClick={() => onStep(compareStep.key)}>
+          <span className="compare-symbol">{compareStep.icon}</span>
+          <span><small>{compareStep.number} · THE LEARNING LOOP</small><strong>{compareStep.title} two pipelines</strong><p>Change the settings, rerun the same question, and see which trade-off actually helps.</p></span>
+          <b>Open comparison →</b>
+        </button>
+      </div>
+      <div className="flow-footnotes">
+        <span><b>01</b> Source stays traceable</span>
+        <span><b>02</b> Every transformation is visible</span>
+        <span><b>03</b> Every answer brings receipts</span>
+      </div>
+    </div>
+  </section>;
+}
+
+function StepGuide({ step, mode }: { step: Exclude<StepKey, "overview">; mode: "Basic" | "Advanced" }) {
+  const guide = STEP_GUIDES[step];
+  return <section className="step-guide" aria-label={`${step} step guide`}>
+    <div className="guide-head"><span>BEFORE YOU TOUCH THE CONTROLS</span><strong>Follow the hand-off.</strong></div>
+    <div className="guide-grid">
+      <article><small>WHAT HAPPENS</small><p>{guide.what}</p></article>
+      <article><small>WHY IT MATTERS</small><p>{guide.why}</p></article>
+      <article><small>FROM THE LAST STEP</small><p>{guide.connection}</p></article>
+      <article className="guide-watch"><small>WATCH FOR</small><p>{guide.watch}</p></article>
+    </div>
+    {mode === "Advanced" && <div className="guide-technical"><span>UNDER THE HOOD</span><p>{guide.technical}</p></div>}
+  </section>;
 }
 
 function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
@@ -590,8 +749,8 @@ function formatBytes(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-function stepIntro(step: StepKey) {
-  const copy: Record<StepKey, string> = {
+function stepIntro(step: Exclude<StepKey, "overview">) {
+  const copy: Record<Exclude<StepKey, "overview">, string> = {
     upload: "Start with a real document. Parsing begins locally, and every later result stays traceable to its source.",
     parse: "Inspect exactly what the parser recovered before trusting anything downstream.",
     chunk: "Split the extracted text with a real tokenizer and see every page-aware boundary.",
