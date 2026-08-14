@@ -6,20 +6,24 @@ RAG FOR ALL is a visual laboratory for understanding and comparing every step fr
 
 ## Current build
 
-The first runnable milestone includes:
+The current runnable milestone includes:
 
 - A complete step-by-step workspace in English.
 - Basic and Advanced interface modes.
 - A built-in employee-handbook example.
-- Local TXT and Markdown loading.
-- Live chunk-size and overlap controls.
-- Deterministic retrieval preview with Top K and Vector/Hybrid settings.
-- Final prompt inspection.
-- Clearly labelled answer preview with source citation.
-- Experiment A/B comparison.
+- Real PDF, DOCX, TXT, and Markdown extraction (20 MB limit).
+- Exact token-based chunking with live chunk size, overlap, and strategy controls.
+- Local TF-IDF embeddings plus Keyword, Vector, and Hybrid retrieval.
+- Top K results that change with the selected value.
+- Exact final prompt inspection and chunk/page citations.
+- OpenAI embeddings and Responses API when a server-side key is configured.
+- Honest local fallbacks when OpenAI is not configured or unavailable.
+- D1 metadata/run history and R2 originals when storage bindings are available.
+- One-click deletion of the original, parsed copy, and related run history.
+- Real Experiment A/B comparison using two pipeline configurations.
 - Responsive white interface.
 
-PDF/DOCX extraction, persistent project storage, real embeddings, and live OpenAI answers are intentionally marked as upcoming milestones rather than simulated as finished features.
+Scanned-PDF OCR, table reconstruction, multi-user accounts, billing, and production-scale vector storage remain outside this milestone.
 
 ## Run locally
 
@@ -30,7 +34,7 @@ npm install
 npm run dev
 ```
 
-Then open the local URL printed by the development server.
+Then open [http://localhost:3000](http://localhost:3000). The Cloudflare development runtime provides local D1 and R2 storage automatically.
 
 Create a production build with:
 
@@ -40,7 +44,23 @@ npm run build
 
 ## Credentials
 
-Do not commit API keys. A later milestone will introduce an `.env.example` and a server-side `OPENAI_API_KEY`. The real `.env` file is already ignored by Git.
+Do not commit API keys. Copy `.env.example` to `.env.local`, add your key there, and restart the development server:
+
+```dotenv
+OPENAI_API_KEY=your-key-here
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+OPENAI_RESPONSE_MODEL=gpt-5.6-luna
+```
+
+The browser never receives the key. If no key is present, the app still runs end-to-end with local TF-IDF retrieval and an extractive answer fallback.
+
+## Verify the pipeline
+
+```bash
+npm test
+```
+
+The test suite builds the app, checks its server-rendered shell, parses real PDF and DOCX fixtures, verifies token limits, confirms Top K behavior, and proves that different chunk sizes produce different experiments.
 
 ## Product and architecture
 
@@ -59,4 +79,4 @@ git commit -m "Build the interactive RAG workspace"
 git push
 ```
 
-The project will use `main` as its default branch once the first verified commit is ready.
+The default branch is `main`; feature work uses `codex/*` branches and draft pull requests.

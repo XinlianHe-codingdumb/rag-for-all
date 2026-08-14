@@ -10,20 +10,22 @@ The project begins as a single TypeScript web application so the learning loop s
 
 - React and TypeScript.
 - Step-based RAG workspace.
-- Immediate local previews for chunk boundaries and experiment settings.
-- Honest preview labels whenever a real model has not been called.
+- Browser-side PDF/DOCX/text parsing and exact token-based chunking.
+- Immediate local TF-IDF/BM25 retrieval so the pipeline remains usable without a paid API.
+- Honest source labels on embeddings and answers.
 
 ### Application API
 
-- Document upload, metadata, deletion, and experiment routes.
-- Provider adapter for embedding and language-model APIs.
+- `/api/documents` upload, list, and cascading deletion.
+- `/api/embeddings` and `/api/answer` server-only OpenAI adapters.
+- `/api/runs` experiment persistence and `/api/status` capability detection.
 - Per-step run records containing input, configuration, output, timing, usage, and errors.
 
 ### Storage
 
-- D1/SQLite for projects, document metadata, experiment configurations, pipeline runs, chunks, citations, and metrics.
-- R2 for original uploaded files and generated exports.
-- Vectors can start in structured storage for the small educational MVP, then move to a vector database when scale justifies it.
+- D1/SQLite for document metadata and pipeline run summaries.
+- R2 for original files and parsed-document JSON.
+- Embeddings currently remain ephemeral; durable vector infrastructure can wait until usage justifies it.
 
 ### OpenAI provider
 
@@ -63,7 +65,7 @@ This contract makes partial reruns, history, inspection, and A/B comparison firs
 ## Milestones
 
 1. Interactive UI shell and deterministic local pipeline preview.
-2. Real TXT/Markdown, PDF, and DOCX parsing with deletion.
-3. Real embedding, vector retrieval, and OpenAI Responses integration.
-4. Durable projects, exports, and A/B run history.
-5. Retrieval quality metrics, hardening, tests, and private deployment.
+2. Real TXT/Markdown, PDF, and DOCX parsing with deletion — complete.
+3. Real embedding, retrieval, and OpenAI Responses integration — complete for the single-document MVP.
+4. Durable project history and export flows.
+5. Retrieval quality metrics, hardening, accessibility, and private deployment.

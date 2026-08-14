@@ -23,8 +23,9 @@ test("server-renders the RAG FOR ALL workspace", async () => {
   assert.match(html, /<title>RAG FOR ALL/);
   assert.match(html, /See what your RAG is thinking/);
   assert.match(html, /Experiment[\s\S]{0,40}A/);
-  assert.match(html, /Chunk settings/);
-  assert.match(html, /Northstar handbook/);
+  assert.match(html, /Choose a document/);
+  assert.match(html, /Northstar Handbook/);
+  assert.match(html, /Parsing begins locally/);
   assert.doesNotMatch(html, /codex-preview/);
   assert.doesNotMatch(html, /react-loading-skeleton/);
 });
