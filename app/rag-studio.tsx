@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, DragEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from "react";
 import { parseDocumentFile } from "./lib/document-parser";
 import {
   buildPrompt,
@@ -33,7 +33,7 @@ const STEPS: Array<{ key: Exclude<StepKey, "overview">; number: string; title: s
   { key: "upload", number: "01", title: "Document", note: "Bring the knowledge", icon: "□" },
   { key: "parse", number: "02", title: "Parse", note: "Turn files into text", icon: "¶" },
   { key: "chunk", number: "03", title: "Chunk", note: "Cut, but with manners", icon: "//" },
-  { key: "embed", number: "04", title: "Embed", note: "Meaning becomes math", icon: "⠿" },
+  { key: "embed", number: "04", title: "Embedding", note: "Meaning becomes math", icon: "⠿" },
   { key: "retrieve", number: "05", title: "Retrieve", note: "Find the useful bits", icon: "?" },
   { key: "rerank", number: "06", title: "Rerank", note: "Put the best first", icon: "↕" },
   { key: "prompt", number: "07", title: "Prompt", note: "Pack the context", icon: "{}" },
@@ -41,125 +41,57 @@ const STEPS: Array<{ key: Exclude<StepKey, "overview">; number: string; title: s
   { key: "compare", number: "A/B", title: "Compare", note: "Receipts, not vibes", icon: "⇄" },
 ];
 
-type ConceptVisualKind = "blind-spot" | "readable" | "chunks" | "meaning-map" | "evidence" | "receipts";
+type ConceptVisualKind = "open-book" | "blind-spot" | "two-moments" | "choice" | "trust" | "measure";
 
-const RAG_CONCEPTS: Array<{ kicker: string; title: string; body: string; takeaway: string; visual: ConceptVisualKind }> = [
+const RAG_CONCEPTS: Array<{ kicker: string; title: string; body: string; visual: ConceptVisualKind }> = [
   {
-    kicker: "WHY RAG EXISTS",
-    title: "The model has a blind spot.",
-    body: "An LLM can write fluently, but it cannot magically read the file on your desk. RAG gives it a temporary, searchable memory built from sources you choose.",
-    takeaway: "RAG does not retrain the model. It brings useful evidence into the conversation.",
+    kicker: "WHAT RAG IS",
+    title: "Give the model an open book.",
+    body: "RAG stands for Retrieval-Augmented Generation. Before an AI writes an answer, the system looks through a knowledge base for useful evidence and places it beside the question. The AI still writes the response—it simply gets the right notes at the right moment.",
+    visual: "open-book",
+  },
+  {
+    kicker: "WHY IT EXISTS",
+    title: "The model does not know your world.",
+    body: "An LLM knows patterns from training and what you put in the current conversation. It may not know your private handbook, yesterday’s policy change, or the exact page behind a fact. RAG connects the model to knowledge you control without retraining it every time something changes.",
     visual: "blind-spot",
   },
   {
-    kicker: "01 · DOCUMENT + PARSE",
-    title: "First, make the file readable.",
-    body: "Your PDF or DOCX is made for humans, not retrieval. The parser recovers its text, page boundaries, and structure so every later step has something clean to work with.",
-    takeaway: "If parsing loses a heading, table, or page, the rest of the pipeline never gets to see it.",
-    visual: "readable",
+    kicker: "HOW THE SYSTEM WORKS",
+    title: "RAG lives in two moments.",
+    body: "First, documents are prepared as a searchable library. Later, when a question arrives, the system finds a small set of useful passages and hands them to the model. Think of it as building the library once, then choosing a few pages for each open-book question.",
+    visual: "two-moments",
   },
   {
-    kicker: "02 · CHUNK",
-    title: "Cut the text into useful bites.",
-    body: "Searching an entire book at once is clumsy. Chunking creates smaller passages that can be found and quoted, with overlap to keep an important sentence from being sliced in half.",
-    takeaway: "Small chunks are precise. Larger chunks carry more context. The useful size depends on the question.",
-    visual: "chunks",
+    kicker: "WHEN TO USE IT",
+    title: "RAG is a choice, not a ritual.",
+    body: "RAG is useful when knowledge is private, changes often, or is too large to paste into every prompt. If the material is short, sending the whole document can be simpler. Fine-tuning is different: it changes how a model behaves; RAG changes what evidence it can see right now.",
+    visual: "choice",
   },
   {
-    kicker: "03 · EMBED + RETRIEVE",
-    title: "Turn meaning into a map.",
-    body: "Embeddings convert each chunk and the question into coordinates. Nearby points tend to mean similar things, so retrieval can find relevant passages even when the wording is different.",
-    takeaway: "Semantic search looks for shared meaning—not just matching keywords.",
-    visual: "meaning-map",
+    kicker: "WHAT TO TRUST",
+    title: "Evidence helps. It is not magic.",
+    body: "RAG can still fetch the wrong passage or let the model misunderstand a good one. A trustworthy system shows its sources, keeps evidence separate from instructions, and admits when the documents are not enough. A citation is a path you can check—not a truth sticker.",
+    visual: "trust",
   },
   {
-    kicker: "04 · RERANK + PROMPT",
-    title: "Let evidence earn its seat.",
-    body: "Retrieval finds candidates. Reranking puts the strongest ones first. Then the prompt packs those passages beside the question, giving the answer model a focused open-book test.",
-    takeaway: "More context is not automatically better. Irrelevant text can make a confident model confidently wander off.",
-    visual: "evidence",
-  },
-  {
-    kicker: "05 · ANSWER + COMPARE",
-    title: "Answer—and show the receipts.",
-    body: "The model writes from the supplied evidence and cites the chunks it used. A/B comparison then shows how different settings changed what was retrieved, packed, and answered.",
-    takeaway: "A good RAG answer should lead you back to the exact source, not ask for blind trust.",
-    visual: "receipts",
+    kicker: "HOW QUALITY IMPROVES",
+    title: "Good RAG is measured.",
+    body: "A useful test asks two questions: did the system find the right evidence, and did the model use it correctly? Compare those answers on real questions, together with speed and cost. The best setup is the one that works for users—not the one with the fanciest settings.",
+    visual: "measure",
   },
 ];
 
-type StepGuideEntry = {
-  what: string;
-  why: string;
-  connection: string;
-  watch: string;
-  technical: string;
-};
-
-const STEP_GUIDES: Record<Exclude<StepKey, "overview">, StepGuideEntry> = {
-  upload: {
-    what: "Choose the source document that contains the knowledge your assistant should use.",
-    why: "RAG needs a source of truth. Without one, the model is answering from memory instead of evidence.",
-    connection: "This is the starting line. The file you choose becomes the raw input for parsing.",
-    watch: "Use the right version, remove secrets you do not need, and remember that scanned PDFs may need OCR.",
-    technical: "Supported now: text PDF, DOCX, TXT, and Markdown up to 20 MB.",
-  },
-  parse: {
-    what: "Extract readable text and page boundaries from the uploaded file.",
-    why: "Retrieval cannot search a PDF layout or a Word container directly; it needs clean text first.",
-    connection: "The original file becomes page-aware text. That text is what the chunker receives next.",
-    watch: "Look for missing pages, broken characters, flattened tables, empty scans, or headings that lost their structure.",
-    technical: "A clean parser report is necessary, but it does not guarantee that every table or visual survived.",
-  },
-  chunk: {
-    what: "Split the parsed text into small, partly overlapping pieces called chunks.",
-    why: "Models retrieve and read focused passages better than one giant document. Chunking creates those searchable units.",
-    connection: "Parsed text is cut into chunks; each chunk keeps its source page so later citations still work.",
-    watch: "Too small loses context, too large adds noise, and too much overlap repeats the same evidence and costs tokens.",
-    technical: "Change size, overlap, or strategy and watch the real BPE token boundaries update immediately.",
-  },
-  embed: {
-    what: "Convert every chunk—and later the question—into a numeric vector that represents its meaning.",
-    why: "Vectors let the system match ideas even when the question and document use different words.",
-    connection: "Each chunk becomes one point in meaning-space. Retrieval compares the question vector with those points.",
-    watch: "The 2D map is only a projection. Nearby dots are a clue, not proof that two passages mean the same thing.",
-    technical: "This build can compare OpenAI embeddings with a local TF-IDF fallback.",
-  },
-  retrieve: {
-    what: "Search all chunks and keep the Top K passages most related to the user’s question.",
-    why: "The answer model should see the smallest useful evidence set, not the whole document and not a lucky guess.",
-    connection: "The question is compared with embedded chunks. The winners become candidates for reranking and prompting.",
-    watch: "Top K that is too low can miss evidence; too high can bury the answer in irrelevant context.",
-    technical: "Vector finds semantic similarity, Keyword finds exact terms, and Hybrid mixes both signals.",
-  },
-  rerank: {
-    what: "Reorder the retrieved candidates so the strongest evidence appears first.",
-    why: "First-pass retrieval is fast, not perfect. A second look can rescue a useful chunk from the bottom of the shortlist.",
-    connection: "Retrieval supplies the shortlist; reranking changes its order before context is sent to the model.",
-    watch: "A high score is still a similarity signal, not a factuality guarantee. Read the chunk, not just the percentage.",
-    technical: "Use Advanced mode to inspect the vector and keyword contribution behind each result.",
-  },
-  prompt: {
-    what: "Pack instructions, retrieved chunks, source labels, and the user’s question into one final model request.",
-    why: "The model can only ground its answer in evidence that actually reaches this payload.",
-    connection: "Ranked chunks become the context window. The answer step receives exactly what you see here.",
-    watch: "Check missing evidence, conflicting passages, token growth, weak instructions, and accidental sensitive text.",
-    technical: "Prompt inspection is the receipt: no invisible context and no mystery system message.",
-  },
-  answer: {
-    what: "Ask the language model to answer from the supplied context and attach chunk citations.",
-    why: "Generation turns retrieved evidence into a useful response, while citations keep the response auditable.",
-    connection: "The final prompt goes to the model; the answer should point back to chunks from the original document.",
-    watch: "Fluent is not the same as correct. Verify amounts, dates, exceptions, and every cited claim against the source.",
-    technical: "If OpenAI is unavailable, the app clearly labels its local extractive fallback instead of pretending.",
-  },
-  compare: {
-    what: "Run the same document and question through two different RAG configurations.",
-    why: "RAG quality comes from trade-offs. A/B comparison replaces intuition with visible evidence and token costs.",
-    connection: "Experiments A and B reuse the full pipeline but change chunking or retrieval settings.",
-    watch: "Do not crown a winner from one question. Test easy, ambiguous, exact-term, and multi-part questions.",
-    technical: "Compare match strength, chunks returned, and context tokens before deciding which setup earns its keep.",
-  },
+const STEP_INTROS: Record<Exclude<StepKey, "overview">, string> = {
+  upload: "A RAG system begins with a trusted set of documents: the knowledge the AI is allowed to use. Uploading creates that source of truth and keeps the original file, its type, and its identity connected so every later chunk, result, and citation can be traced back. The next step will turn the file into readable text; if the source is outdated, incomplete, or sensitive, every step after this inherits the problem.",
+  parse: "Parsing converts a PDF, DOCX, or text file into machine-readable text and metadata. It tries to preserve pages, headings, paragraphs, lists, and tables because the AI cannot retrieve information the parser failed to recover. The uploaded file becomes clean input for chunking, while scanned pages may require OCR and complex layouts should be checked before the knowledge is indexed.",
+  chunk: "Chunking divides the parsed document into passages small enough to search and send to an LLM. Smaller chunks can match a question precisely but may lose surrounding meaning; larger chunks keep more context but add noise and consume more prompt space. Each chunk keeps its source page, then moves to Embedding, where its meaning is represented numerically for search.",
+  embed: "Embedding converts every chunk into a vector—a long list of numbers that represents patterns in its meaning. The question will be converted with the same model, allowing the system to find related ideas even when they use different words. Each dot below is one chunk projected from many dimensions onto a 2D map; this representation powers semantic retrieval, but the flat picture is only a guide, not the real vector space.",
+  retrieve: "Retrieval compares the user’s question with the indexed chunks and returns the Top K candidates most likely to contain useful evidence. Semantic search follows meaning, keyword search catches exact names or codes, and hybrid search combines both. These candidates came from Embedding and will be passed to Reranking; too few may miss the answer, while too many can distract the LLM with irrelevant context.",
+  rerank: "Reranking gives the first retrieval shortlist a slower, more careful second look. It scores each candidate against the complete question and moves the strongest evidence upward before anything reaches the LLM. This can rescue a useful passage that simple similarity placed too low, but it adds computation and latency; the winning chunks become the evidence assembled in the final prompt.",
+  prompt: "Prompt assembly creates the exact package sent to the answer model: system instructions, the user’s question, selected evidence, source labels, and citation rules. This is the bridge between retrieval and generation, because the LLM can only use evidence that fits inside this context. Clear boundaries, sensible ordering, and a controlled token budget help prevent missing evidence, duplicated passages, and document text being mistaken for instructions.",
+  answer: "The LLM now reads the prepared prompt and turns the retrieved evidence into a useful response. It is generating language, not searching the documents again, so a grounded answer should connect important claims to source chunks and say when the available evidence is insufficient. Fluent writing is not proof of correctness; citations let the user travel backward through the pipeline and verify what the model used.",
+  compare: "A/B testing runs the same document and the same question through two pipeline configurations so only the chosen settings change. It shows whether different chunk sizes, overlap, search methods, or Top K values caused different evidence to reach the LLM. Judge retrieval and answer quality first, then consider context size, latency, and cost; one question is a demonstration, while a reliable decision requires a representative test set.",
 };
 
 const SAMPLE_PAGES = [
@@ -209,7 +141,10 @@ export function RagStudio() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [pipelineRan, setPipelineRan] = useState(false);
+  const [embeddingView, setEmbeddingView] = useState({ zoom: 1, x: 0, y: 0 });
+  const [selectedVectorId, setSelectedVectorId] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const mapPanRef = useRef<{ pointerId: number; clientX: number; clientY: number; x: number; y: number } | null>(null);
 
   useEffect(() => {
     fetch("/api/status")
@@ -230,6 +165,22 @@ export function RagStudio() {
     : localEmbedding;
   const ranked = useMemo(() => rankChunks(chunks, query, config, embedding), [chunks, query, config, embedding]);
   const prompt = useMemo(() => buildPrompt(query, ranked), [query, ranked]);
+  const embeddingPoints = useMemo(() => {
+    const raw = embedding.vectors.map((vector, index) => projectVector(vector, index));
+    if (raw.length <= 1) return raw.map(() => ({ x: 50, y: 50 }));
+    const minX = Math.min(...raw.map((point) => point.x));
+    const maxX = Math.max(...raw.map((point) => point.x));
+    const minY = Math.min(...raw.map((point) => point.y));
+    const maxY = Math.max(...raw.map((point) => point.y));
+    const rangeX = maxX - minX;
+    const rangeY = maxY - minY;
+    return raw.map((point, index) => ({
+      x: rangeX > 0.4 ? 14 + ((point.x - minX) / rangeX) * 72 : 50 + Math.cos(index * 2.4) * 30,
+      y: rangeY > 0.4 ? 14 + ((point.y - minY) / rangeY) * 72 : 50 + Math.sin(index * 2.4) * 30,
+    }));
+  }, [embedding.vectors]);
+  const retrievedChunkIds = useMemo(() => new Set(ranked.map((item) => item.id)), [ranked]);
+  const selectedVector = chunks.find((chunk) => chunk.id === selectedVectorId) ?? null;
 
   const comparisons = useMemo(() => (["A", "B"] as const).map((name) => {
     const settings = experiments[name];
@@ -256,6 +207,28 @@ export function RagStudio() {
   };
 
   const chooseFile = () => inputRef.current?.click();
+
+  const changeEmbeddingZoom = (delta: number) => {
+    setEmbeddingView((current) => ({ ...current, zoom: Math.max(0.75, Math.min(2.5, current.zoom + delta)) }));
+  };
+
+  const resetEmbeddingView = () => setEmbeddingView({ zoom: 1, x: 0, y: 0 });
+
+  const beginEmbeddingPan = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest("button")) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    mapPanRef.current = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, x: embeddingView.x, y: embeddingView.y };
+  };
+
+  const moveEmbeddingPan = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const start = mapPanRef.current;
+    if (!start || start.pointerId !== event.pointerId) return;
+    setEmbeddingView((current) => ({ ...current, x: start.x + event.clientX - start.clientX, y: start.y + event.clientY - start.clientY }));
+  };
+
+  const endEmbeddingPan = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (mapPanRef.current?.pointerId === event.pointerId) mapPanRef.current = null;
+  };
 
   const onFileInput = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -507,8 +480,6 @@ export function RagStudio() {
               </div>
             </div>
 
-            <StepGuide step={activeStep} mode={mode} />
-
             <div className="experiment-bar">
               <div className="experiment-tabs">
                 {(["A", "B"] as const).map((item) => (
@@ -577,17 +548,29 @@ export function RagStudio() {
 
             {activeStep === "embed" && (
               <section className="embedding-stage">
-                <div className="vector-map">
-                  <div className="map-grid" />
-                  {chunks.map((chunk, index) => {
-                    const point = projectVector(embedding.vectors[index] ?? [], index);
-                    return <button className="vector-dot" style={{ left: `${point.x}%`, top: `${point.y}%` }} key={chunk.id} title={`Chunk ${chunk.id} · ${pageLabel(chunk.pageStart, chunk.pageEnd)}`} type="button">{chunk.id}</button>;
-                  })}
-                  <div className="axis x">projected meaning →</div><div className="axis y">topic difference →</div>
+                <div className="vector-map" onPointerDown={beginEmbeddingPan} onPointerMove={moveEmbeddingPan} onPointerUp={endEmbeddingPan} onPointerCancel={endEmbeddingPan}>
+                  <div className="map-controls" aria-label="Embedding map controls">
+                    <button type="button" onClick={() => changeEmbeddingZoom(-0.25)} aria-label="Zoom out">−</button>
+                    <span>{Math.round(embeddingView.zoom * 100)}%</span>
+                    <button type="button" onClick={() => changeEmbeddingZoom(0.25)} aria-label="Zoom in">+</button>
+                    <button type="button" onClick={resetEmbeddingView}>Reset</button>
+                  </div>
+                  <div className="vector-plane" style={{ transform: `translate(${embeddingView.x}px, ${embeddingView.y}px) scale(${embeddingView.zoom})` }}>
+                    <div className="map-grid" /><div className="map-axis-line horizontal" /><div className="map-axis-line vertical" />
+                    {chunks.map((chunk, index) => {
+                      const point = embeddingPoints[index] ?? { x: 50, y: 50 };
+                      const isRetrieved = retrievedChunkIds.has(chunk.id);
+                      return <button className={`vector-dot ${isRetrieved ? "retrieved" : ""} ${selectedVectorId === chunk.id ? "selected" : ""}`} style={{ left: `${point.x}%`, top: `${point.y}%` }} key={chunk.id} title={`Chunk ${chunk.id} · ${pageLabel(chunk.pageStart, chunk.pageEnd)}`} type="button" onClick={() => setSelectedVectorId(chunk.id)}>{chunk.id}</button>;
+                    })}
+                    <div className="axis x">meaning projection →</div><div className="axis y">topic difference →</div>
+                  </div>
+                  <div className="map-legend"><span><i className="retrieved" /> Retrieved for this question</span><span><i /> Other chunk</span></div>
+                  <p className="map-help">Drag to move the plane. Use − and + to zoom.</p>
                 </div>
                 <div className="embedding-copy">
-                  <span>REAL VECTOR PROJECTION</span><h2>Meaning becomes a location.</h2>
-                  <p>The positions are calculated from the current vectors. This is a two-dimensional random projection: useful for orientation, not a claim that meaning naturally lives on a flat map.</p>
+                  <span>INTERACTIVE VECTOR PROJECTION</span><h2>Every dot is one chunk.</h2>
+                  <p>Chunks with related vector patterns appear closer together. Highlighted dots are the passages the current question retrieves. Zoom, drag, and select a dot to inspect it—but remember that this is a readable 2D projection of a much larger vector space.</p>
+                  {selectedVector && <div className="selected-vector"><span>SELECTED · CHUNK {selectedVector.id}</span><strong>{pageLabel(selectedVector.pageStart, selectedVector.pageEnd)}</strong><p>{selectedVector.text}</p></div>}
                   <div className="model-row"><span>Current source</span><strong>{embedding.source}</strong></div>
                   <div className="model-row"><span>Model</span><strong>{embedding.model}</strong></div>
                   <div className="model-row"><span>Dimensions</span><strong>{embedding.vectors[0]?.length.toLocaleString() ?? "0"}</strong></div>
@@ -639,15 +622,21 @@ export function RagStudio() {
 
             {activeStep === "compare" && (
               <section className="compare-stage">
-                <div className="compare-intro"><span>SAME QUESTION. DIFFERENT PIPELINES.</span><h2>Which setup earns its keep?</h2><p>These metrics are recalculated from the current document and question, not hard-coded demo values.</p></div>
+                <div className="compare-intro"><span>WHAT THIS A/B TEST IS TESTING</span><h2>Same knowledge. Same question. Different RAG settings.</h2><p>Only chunking and retrieval settings change between A and B. The test shows how those choices change the evidence—and how much context—sent to the LLM.</p></div>
+                <div className="compare-rules">
+                  <article><span>KEPT THE SAME</span><strong>Document + question</strong><p>Both experiments solve the exact same task.</p></article>
+                  <article><span>CHANGED</span><strong>Chunking + retrieval</strong><p>Size, overlap, strategy, method, and Top K can differ.</p></article>
+                  <article><span>WHAT TO JUDGE</span><strong>Evidence quality first</strong><p>Then compare context size, latency, and cost.</p></article>
+                </div>
                 <QuestionBox query={query} setQuery={(value) => setQuery(value)} run={() => setNotice("Both experiments recalculate instantly with local retrieval.")} busy={false} buttonLabel="Refresh comparison" />
                 <div className="compare-grid">{comparisons.map((item) => <article className={`compare-card ${activeExperiment === item.name ? "selected" : ""}`} key={item.name}>
-                  <header><div><span>EXPERIMENT</span><strong>{item.name}</strong></div><button type="button" onClick={() => setActiveExperiment(item.name)}>Edit</button></header>
-                  <div className="compare-method">{item.settings.method}<span>{item.settings.strategy}</span></div>
+                  <header><div><strong>{item.name}</strong><span>{item.name === "A" ? "BASELINE" : "CHALLENGER"}</span></div><button type="button" onClick={() => setActiveExperiment(item.name)}>Edit {item.name}</button></header>
+                  <div className="compare-method">Experiment {item.name}<span>{item.settings.method} search</span></div>
+                  <p className="compare-recipe">Cuts the document into <b>{item.settings.chunkSize}-token chunks</b> with <b>{item.settings.overlap} tokens of overlap</b>, uses <b>{item.settings.strategy.toLowerCase()} splitting</b>, and sends the best <b>{item.settings.topK} passages</b> forward.</p>
                   <div className="compare-metrics"><Stat label="Chunk size" value={`${item.settings.chunkSize} tokens`} /><Stat label="Overlap" value={`${item.settings.overlap} tokens`} /><Stat label="Total chunks" value={String(item.chunks)} /><Stat label="Top K returned" value={String(item.results.length)} /><Stat label="Context sent" value={`${item.contextTokens} tokens`} /><Stat label="Best match" value={`${Math.round(item.best * 100)}%`} accent={item.best === Math.max(...comparisons.map((candidate) => candidate.best))} /></div>
-                  <div className="compare-evidence">{item.results.slice(0, 3).map((result) => <span key={result.id}>#{result.id} {Math.round(result.score * 100)}%</span>)}</div>
+                  <div className="compare-evidence"><strong>WHAT REACHED THE LLM</strong><div>{item.results.slice(0, 5).map((result) => <span key={result.id}>Chunk {result.id} · {Math.round(result.score * 100)}%</span>)}</div></div>
                 </article>)}</div>
-                <div className="verdict"><div className="verdict-icon">↗</div><div><span>READ THE TRADE-OFF</span><strong>{comparisonVerdict(comparisons)}</strong><p>Better retrieval is not always the configuration with the most context. Extra tokens are not a personality trait.</p></div></div>
+                <div className="verdict"><div className="verdict-icon">↗</div><div><span>WHAT THIS RUN SHOWS</span><strong>{comparisonVerdict(comparisons)}</strong><p>Do not choose a permanent winner from one question. Repeat this test with easy, exact-term, ambiguous, and multi-part questions.</p></div></div>
               </section>
             )}
             </div>
@@ -670,11 +659,10 @@ function OverviewPage({ onStep }: { onStep: (step: StepKey) => void }) {
     <section className={`concept-deck concept-${concept.visual}`} aria-label="RAG concept cards">
       <div className="concept-stage" key={conceptIndex}>
         <div className="concept-copy">
-          <div className="concept-progress"><span>RAG IN SIX CARDS</span><b>{String(conceptIndex + 1).padStart(2, "0")} / {String(RAG_CONCEPTS.length).padStart(2, "0")}</b></div>
+          <div className="concept-progress"><span>RAG, FROM IDEA TO TRUST</span><b>{String(conceptIndex + 1).padStart(2, "0")} / {String(RAG_CONCEPTS.length).padStart(2, "0")}</b></div>
           <p className="concept-kicker">{concept.kicker}</p>
           <h1>{concept.title}</h1>
           <p className="concept-body">{concept.body}</p>
-          <div className="concept-takeaway"><span>KEEP THIS</span><strong>{concept.takeaway}</strong></div>
         </div>
         <ConceptVisual kind={concept.visual} />
       </div>
@@ -719,56 +707,41 @@ function OverviewPage({ onStep }: { onStep: (step: StepKey) => void }) {
 }
 
 function ConceptVisual({ kind }: { kind: ConceptVisualKind }) {
+  if (kind === "open-book") return <div className="concept-visual open-book-visual" aria-label="Evidence from a knowledge base being handed to an AI">
+    <div className="visual-doc-stack"><span>KNOWLEDGE</span><i /><i /><i /></div>
+    <div className="visual-transfer"><span>FIND EVIDENCE</span><b>→</b></div>
+    <div className="open-book-model"><span>QUESTION + NOTES</span><strong>AI</strong><small>GROUNDED ANSWER</small></div>
+  </div>;
+
   if (kind === "blind-spot") return <div className="concept-visual" aria-label="A language model separated from private documents">
     <div className="visual-halo"><span>LLM</span><i /><i /><i /></div>
     <div className="visual-gap"><span>CAN’T SEE</span><b>···</b></div>
     <div className="visual-doc-stack"><span>YOUR DOCS</span><i /><i /><i /></div>
   </div>;
 
-  if (kind === "readable") return <div className="concept-visual" aria-label="A raw document becoming clean readable text">
-    <div className="raw-file"><span>PDF</span><b>RAW FILE</b><i /><i /><i /></div>
-    <div className="visual-transfer"><span>PARSE</span><b>→</b></div>
-    <div className="parsed-file"><span>READABLE TEXT</span><b>Heading</b><i /><i /><i /><small>PAGE 01</small></div>
+  if (kind === "two-moments") return <div className="concept-visual two-moments-visual" aria-label="Documents are indexed before a question retrieves evidence">
+    <div className="moment-card"><span>BEFORE QUESTIONS</span><strong>Build the library</strong><div className="mini-library"><i /><i /><i /></div></div>
+    <div className="moment-bridge">→</div>
+    <div className="moment-card"><span>WHEN ASKED</span><strong>Choose useful pages</strong><div className="mini-results"><i /><i /><i /></div></div>
   </div>;
 
-  if (kind === "chunks") return <div className="concept-visual chunk-visual" aria-label="A document divided into overlapping chunks">
-    <div className="chunk-source"><span>ONE LONG DOCUMENT</span><i /><i /><i /><i /><i /><i /></div>
-    <div className="chunk-cut">{"//"}</div>
-    <div className="chunk-stack"><article><span>CHUNK 01</span><i /><i /></article><article><span>CHUNK 02</span><i /><i /></article><article><span>CHUNK 03</span><i /><i /></article></div>
+  if (kind === "choice") return <div className="concept-visual choice-visual" aria-label="Choosing between RAG, long context, and fine-tuning">
+    <article><span>CHANGING KNOWLEDGE</span><strong>RAG</strong><small>Find evidence per question</small></article>
+    <article><span>SMALL KNOWLEDGE</span><strong>Long context</strong><small>Send it all at once</small></article>
+    <article><span>CHANGING BEHAVIOR</span><strong>Fine-tuning</strong><small>Teach a response pattern</small></article>
   </div>;
 
-  if (kind === "meaning-map") return <div className="concept-visual map-visual" aria-label="A question finding nearby meaning on an embedding map">
-    <div className="map-grid" />
-    <div className="query-point"><span>YOUR QUESTION</span><i /></div>
-    <i className="map-point p1" /><i className="map-point p2" /><i className="map-point p3" /><i className="map-point p4" /><i className="map-point p5" />
-    <div className="match-ring"><span>CLOSE IN MEANING</span></div>
+  if (kind === "trust") return <div className="concept-visual trust-visual" aria-label="A grounded answer with sources that can be checked">
+    <div className="trust-question">?</div><div className="trust-line" />
+    <div className="trust-evidence"><span>EVIDENCE</span><i /><i /><i /></div><div className="trust-line" />
+    <div className="trust-answer"><span>ANSWER</span><strong>“Here is what the sources support.”</strong><small>[1] [2]</small></div>
   </div>;
 
-  if (kind === "evidence") return <div className="concept-visual evidence-visual" aria-label="Evidence being ranked and packed into a prompt">
-    <div className="candidate-stack"><span>CANDIDATES</span><article><b>86%</b><i /></article><article><b>74%</b><i /></article><article><b>31%</b><i /></article></div>
-    <div className="visual-transfer"><span>RERANK</span><b>→</b></div>
-    <div className="prompt-pack"><span>FINAL PROMPT</span><article><small>QUESTION</small><i /></article><article><small>BEST EVIDENCE</small><i /><i /></article></div>
+  return <div className="concept-visual measure-visual" aria-label="Retrieval quality and answer quality measured together">
+    <article><span>01</span><strong>Did we find the evidence?</strong><div><i style={{ width: "84%" }} /></div><small>Retrieval quality</small></article>
+    <div className="measure-plus">+</div>
+    <article><span>02</span><strong>Did the AI use it correctly?</strong><div><i style={{ width: "76%" }} /></div><small>Answer quality</small></article>
   </div>;
-
-  return <div className="concept-visual receipt-visual" aria-label="A grounded answer connected to cited source chunks">
-    <div className="answer-sheet"><span>GROUNDED ANSWER</span><i /><i /><i /><div><b>[1]</b><b>[2]</b></div></div>
-    <div className="receipt-lines"><i /><i /></div>
-    <div className="source-receipts"><article><span>[1]</span><b>Chunk 04</b><small>Page 7</small></article><article><span>[2]</span><b>Chunk 09</b><small>Page 12</small></article></div>
-  </div>;
-}
-
-function StepGuide({ step, mode }: { step: Exclude<StepKey, "overview">; mode: "Basic" | "Advanced" }) {
-  const guide = STEP_GUIDES[step];
-  return <section className="step-guide" aria-label={`${step} step guide`}>
-    <div className="guide-head"><span>BEFORE YOU TOUCH THE CONTROLS</span><strong>Follow the hand-off.</strong></div>
-    <div className="guide-grid">
-      <article><small>WHAT HAPPENS</small><p>{guide.what}</p></article>
-      <article><small>WHY IT MATTERS</small><p>{guide.why}</p></article>
-      <article><small>FROM THE LAST STEP</small><p>{guide.connection}</p></article>
-      <article className="guide-watch"><small>WATCH FOR</small><p>{guide.watch}</p></article>
-    </div>
-    {mode === "Advanced" && <div className="guide-technical"><span>UNDER THE HOOD</span><p>{guide.technical}</p></div>}
-  </section>;
 }
 
 function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
@@ -823,8 +796,10 @@ function comparisonVerdict(comparisons: Array<{ name: ExperimentName; best: numb
   if (!a || !b) return "Run both experiments to compare them.";
   const winner = b.best > a.best ? b : a;
   const leaner = b.contextTokens < a.contextTokens ? b : a;
-  if (winner.name === leaner.name) return `Experiment ${winner.name} currently has the stronger top match and the smaller context.`;
-  return `Experiment ${winner.name} has the stronger top match; Experiment ${leaner.name} sends fewer tokens.`;
+  const scoreSummary = `${Math.round(a.best * 100)}% for A versus ${Math.round(b.best * 100)}% for B`;
+  const tokenSummary = `${a.contextTokens} tokens for A versus ${b.contextTokens} for B`;
+  if (winner.name === leaner.name) return `Experiment ${winner.name} has both the stronger top match (${scoreSummary}) and the smaller context (${tokenSummary}).`;
+  return `Experiment ${winner.name} has the stronger top match (${scoreSummary}), while Experiment ${leaner.name} sends less context (${tokenSummary}).`;
 }
 
 function friendlyProjectName(name: string) {
@@ -839,16 +814,5 @@ function formatBytes(bytes: number) {
 }
 
 function stepIntro(step: Exclude<StepKey, "overview">) {
-  const copy: Record<Exclude<StepKey, "overview">, string> = {
-    upload: "Start with a real document. Parsing begins locally, and every later result stays traceable to its source.",
-    parse: "Inspect exactly what the parser recovered before trusting anything downstream.",
-    chunk: "Split the extracted text with a real tokenizer and see every page-aware boundary.",
-    embed: "Turn each chunk into vectors, then inspect a readable projection of the current representation.",
-    retrieve: "Ask a question and watch the system choose which chunks deserve a seat at the table.",
-    rerank: "Inspect how semantic and keyword evidence contribute to the final ranking.",
-    prompt: "Review the exact instructions, retrieved context, and question prepared for the answer model.",
-    answer: "Generate a grounded answer, then follow every citation back to the evidence.",
-    compare: "Run two configurations side by side. Tiny sliders can have surprisingly expensive opinions.",
-  };
-  return copy[step];
+  return STEP_INTROS[step];
 }

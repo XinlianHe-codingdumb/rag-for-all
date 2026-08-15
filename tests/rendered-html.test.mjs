@@ -22,8 +22,8 @@ test("server-renders the RAG FOR ALL workspace", async () => {
   const html = await response.text();
   assert.match(html, /<title>RAG FOR ALL/);
   assert.match(html, /See what your RAG is thinking/);
-  assert.match(html, /RAG IN SIX CARDS/);
-  assert.match(html, /The model has a blind spot/);
+  assert.match(html, /RAG, FROM IDEA TO TRUST/);
+  assert.match(html, /Give the model an open book/);
   assert.match(html, /Next card/);
   assert.match(html, /THE COMPLETE RAG JOURNEY/);
   assert.match(html, /Click any step to look inside/);
@@ -47,8 +47,8 @@ test("keeps API credentials out of client source", async () => {
   assert.doesNotMatch(source, /sk-[a-zA-Z0-9_-]{20,}/);
   assert.doesNotMatch(source, /OPENAI_API_KEY\s*=/);
   assert.doesNotMatch(source, /_sites-preview|SkeletonPreview/);
-  assert.match(studio, /WHAT HAPPENS/);
-  assert.match(studio, /WHY IT MATTERS/);
-  assert.match(studio, /FROM THE LAST STEP/);
-  assert.match(studio, /WATCH FOR/);
+  assert.match(studio, /Embedding converts every chunk into a vector/);
+  assert.match(studio, /WHAT THIS A\/B TEST IS TESTING/);
+  assert.match(studio, /Drag to move the plane/);
+  assert.doesNotMatch(studio, /WHAT HAPPENS|WHY IT MATTERS|FROM THE LAST STEP|WATCH FOR/);
 });
