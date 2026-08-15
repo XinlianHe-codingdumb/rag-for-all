@@ -743,7 +743,7 @@ function OverviewPage({ onStep }: { onStep: (step: StepKey) => void }) {
           <div className="intro-main">
             <div className="intro-copy">
               <p className="intro-eyebrow">FROM A SMART AGENT TO YOUR AGENT</p>
-              <h1>RAG is how an AI agent becomes <span>yours.</span></h1>
+              <h1>RAG is how an <span className="agent-phrase">AI agent</span> becomes <span className="headline-yours">yours.</span></h1>
               <p className="intro-body"><strong>RAG FOR ALL</strong> lets you see, change, and compare every RAG step—from document upload to the grounded answer. AI agents can act, but without your knowledge they are still generic. RAG connects an agent to your documents, your plans, and your latest facts, so it can finally work like <em>your</em> assistant.</p>
             </div>
             <RagDifferenceVisual />

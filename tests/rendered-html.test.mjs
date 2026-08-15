@@ -22,7 +22,8 @@ test("server-renders the RAG FOR ALL workspace", async () => {
   const html = await response.text();
   assert.match(html, /<title>RAG FOR ALL/);
   assert.match(html, /See the evidence behind the answer/);
-  assert.match(html, /RAG is how an AI agent becomes/);
+  assert.match(html, /RAG is how an <span class="agent-phrase">AI agent<\/span> becomes/);
+  assert.match(html, /headline-yours">yours\./);
   assert.match(html, /NEW TO RAG/);
   assert.match(html, /ALREADY KNOW RAG/);
   assert.match(html, /I should learn what RAG is first/);

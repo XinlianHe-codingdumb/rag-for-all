@@ -796,7 +796,8 @@ select { width: 100%; border: 1px solid var(--line); border-radius: 9px; padding
 .intro-main .intro-copy { max-width: 1040px; padding: 4px 8px 0; }
 .app-shell .intro-main .intro-eyebrow { margin-bottom: 14px; }
 .intro-main .intro-copy h1 { max-width: 980px; font-size: clamp(38px,3.5vw,56px); line-height: 1.02; }
-.intro-main .intro-copy h1 span { display: inline; color: var(--blue); font-size: inherit; font-style: italic; }
+.intro-main .intro-copy h1 .agent-phrase { display: inline-block; white-space: nowrap; color: inherit; font-size: inherit; font-style: normal; }
+.intro-main .intro-copy h1 .headline-yours { display: inline-block; margin-left: .16em; color: var(--blue); font-size: inherit; font-style: italic; }
 .app-shell .intro-main .intro-body { max-width: 1000px; margin-top: 19px; font-size: clamp(14px,1vw,16px); line-height: 1.58; }
 .intro-main .intro-body strong { color: #20242b; font-size: inherit; }
 .intro-main .intro-body em { color: var(--blue); font-size: inherit; font-style: italic; font-weight: 690; }
