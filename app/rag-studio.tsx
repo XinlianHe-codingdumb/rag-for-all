@@ -624,7 +624,7 @@ export function RagStudio() {
               <section className="retrieval-stage">
                 <QuestionBox query={query} setQuery={(value) => { setQuery(value); setAnswer(null); setPipelineRan(false); }} run={() => void runPipeline()} busy={Boolean(busy)} buttonLabel="Find candidates" />
                 {config.topK > chunks.length && chunks.length > 0 && <div className="inline-warning">You asked for {config.topK}, but this document only has {chunks.length} chunks. Tiny document, tiny buffet.</div>}
-                <RetrievalMap chunks={chunks} points={embeddingPoints} queryPoint={queryPoint} candidates={retrievedCandidates} finalIds={finalChunkIds} query={query} />
+                <RetrievalMap chunks={chunks} points={embeddingPoints} queryPoint={queryPoint} candidates={retrievedCandidates} topChunks={finalEvidence} topK={config.topK} query={query} />
                 <div className="retrieval-layout">
                   <div className="results-panel">
                     <div className="panel-title"><div><span>CANDIDATE POOL · {retrievedCandidates.length}</span><h2>Fast search casts a wider net.</h2></div><small>{config.method} · {embedding.source}</small></div>
@@ -740,27 +740,31 @@ function OverviewPage({ onStep }: { onStep: (step: StepKey) => void }) {
     <div className={`overview-viewport overview-show-${pane}`} onKeyDown={onOverviewKeyDown}>
       <div className="overview-world">
         <section className="overview-pane intro-pane" aria-label="Introduction to RAG FOR ALL" inert={pane !== "intro"}>
-          <div className="intro-copy">
-            <p className="intro-eyebrow">SEE THE EVIDENCE BEHIND THE ANSWER</p>
-            <h1><span>AI is powerful.</span> RAG gives it something real to work with.</h1>
-            <p className="intro-body">RAG FOR ALL turns Retrieval-Augmented Generation from a black box into a hands-on journey. See how one document becomes searchable evidence, how a question finds the right passages, and how an AI turns them into an answer you can trace. In the age of AI agents, the evidence behind an answer matters more than ever—because AI can now act, not just chat.</p>
-            <div className="intro-promises" aria-label="What this product makes visible">
-              <span><b>01</b> Follow every hand-off</span>
-              <span><b>02</b> Change real settings</span>
-              <span><b>03</b> Trace every answer</span>
+          <div className="intro-main">
+            <div className="intro-copy">
+              <p className="intro-eyebrow">FROM A SMART AGENT TO YOUR AGENT</p>
+              <h1>RAG is how an AI agent becomes <span>yours.</span></h1>
+              <p className="intro-body"><strong>RAG FOR ALL</strong> lets you see, change, and compare every RAG step—from document upload to the grounded answer. AI agents can act, but without your knowledge they are still generic. RAG connects an agent to your documents, your plans, and your latest facts, so it can finally work like <em>your</em> assistant.</p>
+              <div className="intro-promises" aria-label="What this product makes visible">
+                <span><b>01</b> See every hand-off</span>
+                <span><b>02</b> Change real settings</span>
+                <span><b>03</b> Check every answer</span>
+              </div>
             </div>
+            <RagDifferenceVisual />
           </div>
-          <IntroSystemVisual />
-          <button type="button" className="intro-route route-concepts" onClick={() => setPane("concepts")}>
-            <span><small>FIRST TIME SEEING RAG?</small><strong>Meet the idea before the machinery.</strong><em>Take a two-minute visual tour. No jargon exam at the end.</em></span>
-            <b aria-hidden="true">→</b>
-            <i>Show me what RAG is</i>
-          </button>
-          <button type="button" className="intro-route route-pipeline" onClick={() => setPane("pipeline")}>
-            <span><small>ALREADY KNOW THE BASICS?</small><strong>Skip the intro. Watch it work.</strong><em>Upload a document, change the settings, and watch every hand-off.</em></span>
-            <i>Visualize the pipeline</i>
-            <b aria-hidden="true">↓</b>
-          </button>
+          <aside className="intro-choices" aria-label="Choose your RAG journey">
+            <article className="intro-choice beginner-choice">
+              <div className="choice-speech"><small>NEW TO RAG?</small><strong>“I should learn what RAG is first. I’ll be right back.”</strong><span>Take the two-minute concept tour.</span></div>
+              <img src="/doodle-walking.png" alt="A curious doodle person walking toward the RAG introduction" />
+              <button type="button" onClick={() => setPane("concepts")} aria-label="Open the RAG concept tour">→</button>
+            </article>
+            <article className="intro-choice experienced-choice">
+              <div className="choice-speech"><small>ALREADY KNOW RAG?</small><strong>“I know the theory. Just show me the good stuff.”</strong><span>Jump into the working pipeline.</span></div>
+              <img src="/doodle-lounging.png" alt="A relaxed doodle person waiting to see the RAG pipeline" />
+              <button type="button" onClick={() => setPane("pipeline")} aria-label="Open the interactive RAG pipeline">↓</button>
+            </article>
+          </aside>
         </section>
 
         <section className="overview-pane concept-pane" aria-label="RAG concept tour" inert={pane !== "concepts"}>
@@ -829,14 +833,23 @@ function OverviewPage({ onStep }: { onStep: (step: StepKey) => void }) {
   </section>;
 }
 
-function IntroSystemVisual() {
-  return <div className="intro-system-visual" aria-label="Documents become evidence that an AI agent can use">
-    <div className="intro-visual-caption"><span>ONE DOCUMENT</span><b>VISIBLE ALL THE WAY THROUGH</b></div>
-    <div className="intro-knowledge-card"><small>YOUR KNOWLEDGE</small><i /><i /><i /><strong>DOC</strong></div>
-    <div className="intro-search-path"><span>RETRIEVE</span><i /><i /><i /><b>→</b></div>
-    <div className="intro-agent-card"><small>AI AGENT</small><strong>EVIDENCE IN</strong><div><span>SEARCH</span><span>DECIDE</span><span>ACT</span></div></div>
-    <p><i /> Answer grounded in something you can inspect</p>
-  </div>;
+function RagDifferenceVisual() {
+  const question = "Can you check tomorrow’s date—where, when, and what should I bring?";
+  return <section className="rag-difference" aria-label="The same assistant conversation without and with RAG">
+    <header><span>WHY RAG CHANGES THE CONVERSATION</span><strong>Same question. Very different assistant.</strong></header>
+    <div className="rag-dialogues">
+      <article className="rag-dialogue without-rag">
+        <div className="dialogue-label"><span>WITHOUT RAG</span><small>Generic memory only</small></div>
+        <p className="chat-bubble user-chat">{question}</p>
+        <div className="agent-reply"><img src="/doodle-agent.png" alt="A cute AI agent robot" /><p className="chat-bubble agent-chat">Sorry, I couldn’t find any information about your date.</p></div>
+      </article>
+      <article className="rag-dialogue with-rag">
+        <div className="dialogue-label"><span>WITH RAG</span><small>Your latest information</small></div>
+        <p className="chat-bubble user-chat">{question}</p>
+        <div className="agent-reply"><img src="/doodle-agent.png" alt="A cute AI agent robot using retrieved information" /><p className="chat-bubble agent-chat">I found an update: your date went official with someone else yesterday. Still want to go?</p></div>
+      </article>
+    </div>
+  </section>;
 }
 
 function ConceptVisual({ kind }: { kind: ConceptVisualKind }) {
@@ -895,28 +908,57 @@ function QuestionBox({ query, setQuery, run, busy, buttonLabel = "Retrieve evide
   return <div className="query-box"><span>YOUR QUESTION</span><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Question" /><button type="button" onClick={run} disabled={busy || !query.trim()}>{busy ? "Working…" : buttonLabel}</button></div>;
 }
 
-function RetrievalMap({ chunks, points, queryPoint, candidates, finalIds, query }: { chunks: RagChunk[]; points: Array<{ x: number; y: number }>; queryPoint: { x: number; y: number }; candidates: RankedChunk[]; finalIds: Set<number>; query: string }) {
+function RetrievalMap({ chunks, points, queryPoint, candidates, topChunks, topK, query }: { chunks: RagChunk[]; points: Array<{ x: number; y: number }>; queryPoint: { x: number; y: number }; candidates: RankedChunk[]; topChunks: RerankedChunk[]; topK: number; query: string }) {
+  const [zoom, setZoom] = useState(1);
   const candidateById = new Map(candidates.map((candidate) => [candidate.id, candidate]));
+  const displayedTopChunks = topChunks.length ? topChunks.slice(0, topK) : candidates.slice(0, topK);
+  const topKOrder = new Map(displayedTopChunks.map((candidate, index) => [candidate.id, index + 1]));
+  const focusPoints = [queryPoint, ...displayedTopChunks.map((candidate) => points[candidate.id - 1] ?? { x: 50, y: 50 })];
+  const minX = Math.min(...focusPoints.map((point) => point.x));
+  const maxX = Math.max(...focusPoints.map((point) => point.x));
+  const minY = Math.min(...focusPoints.map((point) => point.y));
+  const maxY = Math.max(...focusPoints.map((point) => point.y));
+  const center = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+  const fitScale = Math.min(2.6, 64 / Math.max(18, maxX - minX), 64 / Math.max(18, maxY - minY));
+  const displayPoint = (point: { x: number; y: number }) => ({
+    x: 50 + (point.x - center.x) * fitScale * zoom,
+    y: 50 + (point.y - center.y) * fitScale * zoom,
+  });
+  const displayedQuery = displayPoint(queryPoint);
+  const focusKey = `${query}:${displayedTopChunks.map((chunk) => chunk.id).join(",")}`;
+
+  useEffect(() => setZoom(1), [focusKey]);
+
   return <section className="retrieval-map-card">
     <div className="retrieval-space" aria-label="Question vector connected to its nearest chunk candidates">
-      <div className="retrieval-space-grid" />
-      {candidates.map((candidate) => {
-        const point = points[candidate.id - 1] ?? { x: 50, y: 50 };
-        return <i className="retrieval-link" style={retrievalLineStyle(queryPoint, point, candidate.score)} key={`link-${candidate.id}`} />;
-      })}
+      <div className="retrieval-space-grid" style={{ backgroundSize: `${Math.max(22, 34 * fitScale * zoom)}px ${Math.max(22, 34 * fitScale * zoom)}px` }} />
+      <div className="retrieval-map-controls" aria-label="Vector map zoom controls">
+        <button type="button" onClick={() => setZoom((current) => Math.max(.75, current - .25))} disabled={zoom <= .75} aria-label="Zoom out">−</button>
+        <span>{Math.round(zoom * 100)}%</span>
+        <button type="button" onClick={() => setZoom((current) => Math.min(1.75, current + .25))} disabled={zoom >= 1.75} aria-label="Zoom in">+</button>
+        <button type="button" className="fit-top-k" onClick={() => setZoom(1)}>Fit Top K</button>
+      </div>
+      <div className="retrieval-fit-label">Q + {displayedTopChunks.length} TOP K CHUNKS · AUTO-FITTED</div>
+      <svg className="retrieval-links" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        {displayedTopChunks.map((candidate) => {
+          const point = displayPoint(points[candidate.id - 1] ?? { x: 50, y: 50 });
+          return <line x1={displayedQuery.x} y1={displayedQuery.y} x2={point.x} y2={point.y} opacity={Math.max(.45, Math.min(.88, candidate.score))} vectorEffect="non-scaling-stroke" key={`link-${candidate.id}`} />;
+        })}
+      </svg>
       {chunks.map((chunk) => {
-        const point = points[chunk.id - 1] ?? { x: 50, y: 50 };
+        const point = displayPoint(points[chunk.id - 1] ?? { x: 50, y: 50 });
         const candidate = candidateById.get(chunk.id);
-        return <span className={`retrieval-space-dot ${candidate ? "candidate" : ""} ${finalIds.has(chunk.id) ? "final" : ""}`} style={{ left: `${point.x}%`, top: `${point.y}%` }} title={`Chunk ${chunk.id}`} key={chunk.id}>{candidate ? candidate.rank : ""}</span>;
+        const topRank = topKOrder.get(chunk.id);
+        return <span className={`retrieval-space-dot ${candidate ? "candidate" : ""} ${topRank ? "top-k" : ""}`} style={{ left: `${point.x}%`, top: `${point.y}%` }} title={`Chunk ${chunk.id}${candidate ? ` · ${Math.round(candidate.score * 100)}% retrieval match` : ""}`} key={chunk.id}>{topRank ?? ""}</span>;
       })}
-      <span className="query-vector" style={{ left: `${queryPoint.x}%`, top: `${queryPoint.y}%` }}>Q</span>
+      <span className="query-vector" style={{ left: `${displayedQuery.x}%`, top: `${displayedQuery.y}%` }}>Q</span>
     </div>
     <div className="retrieval-map-copy">
-      <span>FIRST PASS · FAST SEARCH</span><h2>The question enters the same space.</h2>
-      <p><strong>Q</strong> is the question vector. Numbered dots are the broad candidate pool; lower numbers ranked higher in the first pass. The highlighted dots survive the second pass and become final evidence.</p>
+      <span>TOP K · QUESTION-TO-EVIDENCE VIEW</span><h2>See exactly what the question connects to.</h2>
+      <p><strong>Q</strong> is the question vector. The numbered green dots are the current Top K chunks that continue to the prompt. This view automatically fits the question, every Top K chunk, and every connecting line into one readable frame.</p>
       <div className="question-preview"><small>QUESTION</small><strong>{query}</strong></div>
-      <div className="retrieval-map-legend"><span><i className="query" /> Question</span><span><i className="candidate" /> Candidate</span><span><i className="final" /> Final evidence</span></div>
-      <small className="projection-note">The lines explain the relationship. Their apparent 2D length is illustrative; ranking uses the original high-dimensional scores.</small>
+      <div className="retrieval-map-legend"><span><i className="query" /> Question</span><span><i className="top-k" /> Top K chunk</span><span><i /> Other chunk</span></div>
+      <small className="projection-note">The lines use the real positions in this 2D projection. Retrieval and reranking still use the original high-dimensional scores—not the apparent screen distance.</small>
     </div>
   </section>;
 }
@@ -943,18 +985,6 @@ function RerankFlow({ candidates, finalEvidence, source, model }: { candidates: 
 function SettingDelta({ label, before, after }: { label: string; before: string; after: string }) {
   const changed = before !== after;
   return <div className={changed ? "changed" : "same"}><span>{label}</span><strong>{before}</strong><b>→</b><strong>{after}</strong></div>;
-}
-
-function retrievalLineStyle(from: { x: number; y: number }, to: { x: number; y: number }, score: number) {
-  const dx = to.x - from.x;
-  const dy = to.y - from.y;
-  return {
-    left: `${from.x}%`,
-    top: `${from.y}%`,
-    width: `${Math.hypot(dx, dy)}%`,
-    opacity: Math.max(.2, Math.min(.78, score)),
-    transform: `rotate(${Math.atan2(dy, dx) * 180 / Math.PI}deg)`,
-  };
 }
 
 function ChunkControls({ config, mode, update, experiment }: { config: PipelineConfig; mode: "Basic" | "Advanced"; update: (patch: Partial<PipelineConfig>) => void; experiment: ExperimentName }) {

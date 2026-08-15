@@ -15,7 +15,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "RAG FOR ALL",
     description: "See the evidence behind the answer.",
-    images: [{ url: "/og.png", width: 1774, height: 887, alt: "RAG FOR ALL document-to-evidence journey" }],
+    images: [{ url: "/og.png", width: 1536, height: 1024, alt: "RAG FOR ALL turns a generic AI agent into your agent" }],
   },
   twitter: {
     card: "summary_large_image",
