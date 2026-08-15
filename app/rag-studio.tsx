@@ -419,17 +419,7 @@ export function RagStudio() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <button type="button" className="brand-lockup brand-button" onClick={() => setActiveStep("overview")} aria-label="Open RAG overview">
-          <div className="brand-mark">R</div>
-          <div><strong>RAG FOR ALL</strong><span>See what your RAG is thinking.</span></div>
-        </button>
-        <div className="top-actions">
-          <div className={`privacy-pill ${apiStatus?.openaiConfigured ? "connected" : ""}`}>
-            <i /> {apiStatus?.openaiConfigured ? "OpenAI connected" : "Local mode"}
-          </div>
-          <button className="quiet-button" type="button" onClick={() => setActiveStep("overview")}>Guide</button>
-          <button className="avatar" type="button" aria-label="Open profile">XL</button>
-        </div>
+        <p className="topbar-title"><strong>RAG FOR ALL</strong><span> — See How RAG Works, Step by Step.</span></p>
       </header>
 
       <div className="workspace">
