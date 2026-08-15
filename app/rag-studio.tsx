@@ -46,44 +46,44 @@ const STEPS: Array<{ key: Exclude<StepKey, "overview">; number: string; title: s
   { key: "compare", number: "A/B", title: "Compare", note: "Receipts, not vibes", icon: "⇄" },
 ];
 
-type ConceptVisualKind = "open-book" | "blind-spot" | "two-moments" | "choice" | "trust" | "measure";
+type ConceptVisualKind = "open-book" | "agent-action" | "blind-spot" | "two-moments" | "choice" | "trust";
 
 const RAG_CONCEPTS: Array<{ kicker: string; title: string; body: string; visual: ConceptVisualKind }> = [
   {
     kicker: "WHAT RAG IS",
-    title: "Give the model an open book.",
-    body: "RAG stands for Retrieval-Augmented Generation. Before an AI writes an answer, the system looks through a knowledge base for useful evidence and places it beside the question. The AI still writes the response—it simply gets the right notes at the right moment.",
+    title: "Give AI an open book.",
+    body: "RAG stands for Retrieval-Augmented Generation. Before an AI answers, it looks for useful evidence in a knowledge base and places that evidence beside the question. The model still writes the response; RAG gives it the right notes at the right moment.",
     visual: "open-book",
   },
   {
-    kicker: "WHY IT EXISTS",
+    kicker: "WHY IT MATTERS NOW",
+    title: "An answer can be wrong. An agent can act on it.",
+    body: "AI agents can search, decide, write, and trigger actions. When they rely only on model memory, a confident mistake can travel much further. RAG gives an agent current, relevant evidence before it responds or acts.",
+    visual: "agent-action",
+  },
+  {
+    kicker: "THE KNOWLEDGE GAP",
     title: "The model does not know your world.",
-    body: "An LLM knows patterns from training and what you put in the current conversation. It may not know your private handbook, yesterday’s policy change, or the exact page behind a fact. RAG connects the model to knowledge you control without retraining it every time something changes.",
+    body: "A model knows patterns from training and whatever is inside the current conversation. It may not know your handbook, customer history, latest policy, or today’s product data. RAG connects the model to knowledge you control without retraining it every time the facts change.",
     visual: "blind-spot",
   },
   {
-    kicker: "HOW THE SYSTEM WORKS",
-    title: "RAG lives in two moments.",
-    body: "First, documents are prepared as a searchable library. Later, when a question arrives, the system finds a small set of useful passages and hands them to the model. Think of it as building the library once, then choosing a few pages for each open-book question.",
+    kicker: "THE SIMPLE MENTAL MODEL",
+    title: "Find first. Answer second.",
+    body: "RAG has two jobs: retrieve a small set of useful passages, then give those passages to the language model as context. Think of it like an open-book exam—the model does the writing, but it gets to open the right pages first.",
     visual: "two-moments",
   },
   {
-    kicker: "WHEN TO USE IT",
-    title: "RAG is a choice, not a ritual.",
-    body: "RAG is useful when knowledge is private, changes often, or is too large to paste into every prompt. If the material is short, sending the whole document can be simpler. Fine-tuning is different: it changes how a model behaves; RAG changes what evidence it can see right now.",
+    kicker: "WHEN RAG FITS",
+    title: "Use RAG when the knowledge is private, large, or changing.",
+    body: "RAG is a good fit when answers live across many documents, update often, or should stay under your control. If the material is short, sending the whole thing may be simpler. Fine-tuning changes how a model behaves; RAG changes what evidence it can see right now.",
     visual: "choice",
   },
   {
-    kicker: "WHAT TO TRUST",
+    kicker: "WHAT TRUST LOOKS LIKE",
     title: "Evidence helps. It is not magic.",
-    body: "RAG can still fetch the wrong passage or let the model misunderstand a good one. A trustworthy system shows its sources, keeps evidence separate from instructions, and admits when the documents are not enough. A citation is a path you can check—not a truth sticker.",
+    body: "RAG can retrieve the wrong passage, miss the right one, or let the model misunderstand good evidence. A trustworthy system shows sources, admits when evidence is missing, and tests whether the right passage was found and used correctly. Citations are receipts—not decorations.",
     visual: "trust",
-  },
-  {
-    kicker: "HOW QUALITY IMPROVES",
-    title: "Good RAG is measured.",
-    body: "A useful test asks two questions: did the system find the right evidence, and did the model use it correctly? Compare those answers on real questions, together with speed and cost. The best setup is the one that works for users—not the one with the fanciest settings.",
-    visual: "measure",
   },
 ];
 
@@ -707,63 +707,136 @@ export function RagStudio() {
   );
 }
 
+type OverviewPane = "intro" | "concepts" | "pipeline";
+
 function OverviewPage({ onStep }: { onStep: (step: StepKey) => void }) {
+  const [pane, setPane] = useState<OverviewPane>("intro");
   const [conceptIndex, setConceptIndex] = useState(0);
   const concept = RAG_CONCEPTS[conceptIndex];
   const mainSteps = STEPS.filter((step) => step.key !== "compare");
   const compareStep = STEPS.find((step) => step.key === "compare")!;
-  const showPrevious = () => setConceptIndex((current) => (current - 1 + RAG_CONCEPTS.length) % RAG_CONCEPTS.length);
-  const showNext = () => setConceptIndex((current) => (current + 1) % RAG_CONCEPTS.length);
+  const showPrevious = () => setConceptIndex((current) => Math.max(0, current - 1));
+  const showNext = () => {
+    if (conceptIndex === RAG_CONCEPTS.length - 1) {
+      setPane("pipeline");
+      return;
+    }
+    setConceptIndex((current) => Math.min(RAG_CONCEPTS.length - 1, current + 1));
+  };
+
+  const onOverviewKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
+    if (pane !== "concepts") return;
+    if (event.key === "ArrowLeft" && conceptIndex > 0) {
+      event.preventDefault();
+      showPrevious();
+    }
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      showNext();
+    }
+  };
 
   return <section className="overview-page">
-    <section className={`concept-deck concept-${concept.visual}`} aria-label="RAG concept cards">
-      <div className="concept-stage" key={conceptIndex}>
-        <div className="concept-copy">
-          <div className="concept-progress"><span>RAG, FROM IDEA TO TRUST</span><b>{String(conceptIndex + 1).padStart(2, "0")} / {String(RAG_CONCEPTS.length).padStart(2, "0")}</b></div>
-          <h1 className="concept-kicker">{concept.kicker}</h1>
-          <p className="concept-thesis">{concept.title}</p>
-          <p className="concept-body">{concept.body}</p>
-        </div>
-        <ConceptVisual kind={concept.visual} />
-      </div>
-      <div className="concept-controls">
-        <button type="button" className="concept-arrow" onClick={showPrevious} aria-label="Previous concept card">←</button>
-        <div className="concept-tabs" role="tablist" aria-label="Choose a RAG concept card">
-          {RAG_CONCEPTS.map((card, index) => <button type="button" role="tab" aria-selected={index === conceptIndex} aria-label={`Card ${index + 1}: ${card.title}`} className={index === conceptIndex ? "active" : ""} onClick={() => setConceptIndex(index)} key={card.title}><span>{String(index + 1).padStart(2, "0")}</span><i /></button>)}
-        </div>
-        <button type="button" className="concept-next" onClick={showNext}>{conceptIndex === RAG_CONCEPTS.length - 1 ? "Start again" : "Next card"}<span>→</span></button>
-      </div>
-    </section>
-
-    <div className="flow-lab">
-      <div className="flow-lab-head">
-        <div><span>THE COMPLETE RAG JOURNEY</span><h2>Click any step to look inside.</h2></div>
-        <p><i /> What changes at each hand-off?</p>
-      </div>
-      <ol className="flow-map" aria-label="Interactive RAG pipeline map">
-        {mainSteps.map((step) => <li key={step.key}>
-          <button type="button" className="flow-node" onClick={() => onStep(step.key)} aria-label={`Open ${step.title} step`}>
-            <span className="flow-node-top"><small>{step.number}</small><i>{step.icon}</i></span>
-            <strong>{step.title}</strong>
-            <span>{step.note}</span>
+    <div className={`overview-viewport overview-show-${pane}`} onKeyDown={onOverviewKeyDown}>
+      <div className="overview-world">
+        <section className="overview-pane intro-pane" aria-label="Introduction to RAG FOR ALL" inert={pane !== "intro"}>
+          <div className="intro-copy">
+            <p className="intro-eyebrow">SEE THE EVIDENCE BEHIND THE ANSWER</p>
+            <h1><span>AI is powerful.</span> RAG gives it something real to work with.</h1>
+            <p className="intro-body">RAG FOR ALL turns Retrieval-Augmented Generation from a black box into a hands-on journey. See how one document becomes searchable evidence, how a question finds the right passages, and how an AI turns them into an answer you can trace. In the age of AI agents, the evidence behind an answer matters more than ever—because AI can now act, not just chat.</p>
+            <div className="intro-promises" aria-label="What this product makes visible">
+              <span><b>01</b> Follow every hand-off</span>
+              <span><b>02</b> Change real settings</span>
+              <span><b>03</b> Trace every answer</span>
+            </div>
+          </div>
+          <IntroSystemVisual />
+          <button type="button" className="intro-route route-concepts" onClick={() => setPane("concepts")}>
+            <span><small>FIRST TIME SEEING RAG?</small><strong>Meet the idea before the machinery.</strong><em>Take a two-minute visual tour. No jargon exam at the end.</em></span>
+            <b aria-hidden="true">→</b>
+            <i>Show me what RAG is</i>
           </button>
-        </li>)}
-      </ol>
-      <div className="compare-branch">
-        <div className="branch-line"><i /></div>
-        <button type="button" onClick={() => onStep(compareStep.key)}>
-          <span className="compare-symbol">{compareStep.icon}</span>
-          <span><small>{compareStep.number} · THE LEARNING LOOP</small><strong>{compareStep.title} two pipelines</strong><p>Change the settings, rerun the same question, and see which trade-off actually helps.</p></span>
-          <b>Open comparison →</b>
-        </button>
-      </div>
-      <div className="flow-footnotes">
-        <span><b>01</b> Source stays traceable</span>
-        <span><b>02</b> Every transformation is visible</span>
-        <span><b>03</b> Every answer brings receipts</span>
+          <button type="button" className="intro-route route-pipeline" onClick={() => setPane("pipeline")}>
+            <span><small>ALREADY KNOW THE BASICS?</small><strong>Skip the intro. Watch it work.</strong><em>Upload a document, change the settings, and watch every hand-off.</em></span>
+            <i>Visualize the pipeline</i>
+            <b aria-hidden="true">↓</b>
+          </button>
+        </section>
+
+        <section className="overview-pane concept-pane" aria-label="RAG concept tour" inert={pane !== "concepts"}>
+          <div className="overview-pane-toolbar">
+            <button type="button" onClick={() => setPane("intro")}>← Back to intro</button>
+            <button type="button" onClick={() => setPane("pipeline")}>Skip to interactive pipeline ↓</button>
+          </div>
+          <section className={`concept-deck concept-${concept.visual}`} aria-label="RAG concept cards">
+            <div className="concept-stage" key={conceptIndex}>
+              <div className="concept-copy">
+                <div className="concept-progress"><span>RAG, FROM IDEA TO TRUST</span><b>{String(conceptIndex + 1).padStart(2, "0")} / {String(RAG_CONCEPTS.length).padStart(2, "0")}</b></div>
+                <h1 className="concept-kicker">{concept.kicker}</h1>
+                <p className="concept-thesis">{concept.title}</p>
+                <p className="concept-body">{concept.body}</p>
+              </div>
+              <ConceptVisual kind={concept.visual} />
+            </div>
+            <div className="concept-controls">
+              <button type="button" className="concept-arrow" onClick={showPrevious} disabled={conceptIndex === 0} aria-label="Previous concept card">←</button>
+              <div className="concept-tabs" role="tablist" aria-label="Choose a RAG concept card">
+                {RAG_CONCEPTS.map((card, index) => <button type="button" role="tab" aria-selected={index === conceptIndex} aria-label={`Card ${index + 1}: ${card.title}`} className={index === conceptIndex ? "active" : ""} onClick={() => setConceptIndex(index)} key={card.title}><span>{String(index + 1).padStart(2, "0")}</span><i /></button>)}
+              </div>
+              <button type="button" className="concept-next" onClick={showNext}>{conceptIndex === RAG_CONCEPTS.length - 1 ? "Now show me the pipeline" : "Next card"}<span>{conceptIndex === RAG_CONCEPTS.length - 1 ? "↓" : "→"}</span></button>
+            </div>
+          </section>
+        </section>
+
+        <section className="overview-pane pipeline-pane" aria-label="Interactive RAG pipeline" inert={pane !== "pipeline"}>
+          <div className="overview-pane-toolbar">
+            <button type="button" onClick={() => setPane("intro")}>← Back to intro</button>
+            <button type="button" onClick={() => setPane("concepts")}>Need the big idea? View the RAG tour →</button>
+          </div>
+          <div className="flow-lab">
+            <div className="flow-lab-head">
+              <div><span>THE COMPLETE RAG JOURNEY</span><h2>Turn one document into an answer you can trace.</h2><p>Click any step to open the real working pipeline. Change the settings, rerun the same question, and watch what changes downstream.</p></div>
+              <button type="button" className="flow-start" onClick={() => onStep("upload")}>Start with Document →</button>
+            </div>
+            <ol className="flow-map" aria-label="Interactive RAG pipeline map">
+              {mainSteps.map((step) => <li key={step.key}>
+                <button type="button" className="flow-node" onClick={() => onStep(step.key)} aria-label={`Open ${step.title} step`}>
+                  <span className="flow-node-top"><small>{step.number}</small><i>{step.icon}</i></span>
+                  <strong>{step.title}</strong>
+                  <span>{step.note}</span>
+                </button>
+              </li>)}
+            </ol>
+            <div className="compare-branch">
+              <div className="branch-line"><i /></div>
+              <button type="button" onClick={() => onStep(compareStep.key)}>
+                <span className="compare-symbol">{compareStep.icon}</span>
+                <span><small>{compareStep.number} · THE LEARNING LOOP</small><strong>{compareStep.title} two pipelines</strong><p>Change the settings, rerun the same question, and see which trade-off actually helps.</p></span>
+                <b>Open comparison →</b>
+              </button>
+            </div>
+            <div className="flow-footnotes">
+              <span><b>01</b> Source stays traceable</span>
+              <span><b>02</b> Every transformation is visible</span>
+              <span><b>03</b> Every answer brings receipts</span>
+            </div>
+          </div>
+        </section>
+
+        <div className="overview-pane overview-empty" aria-hidden="true" />
       </div>
     </div>
   </section>;
+}
+
+function IntroSystemVisual() {
+  return <div className="intro-system-visual" aria-label="Documents become evidence that an AI agent can use">
+    <div className="intro-visual-caption"><span>ONE DOCUMENT</span><b>VISIBLE ALL THE WAY THROUGH</b></div>
+    <div className="intro-knowledge-card"><small>YOUR KNOWLEDGE</small><i /><i /><i /><strong>DOC</strong></div>
+    <div className="intro-search-path"><span>RETRIEVE</span><i /><i /><i /><b>→</b></div>
+    <div className="intro-agent-card"><small>AI AGENT</small><strong>EVIDENCE IN</strong><div><span>SEARCH</span><span>DECIDE</span><span>ACT</span></div></div>
+    <p><i /> Answer grounded in something you can inspect</p>
+  </div>;
 }
 
 function ConceptVisual({ kind }: { kind: ConceptVisualKind }) {
@@ -771,6 +844,12 @@ function ConceptVisual({ kind }: { kind: ConceptVisualKind }) {
     <div className="visual-doc-stack"><span>KNOWLEDGE</span><i /><i /><i /></div>
     <div className="visual-transfer"><span>FIND EVIDENCE</span><b>→</b></div>
     <div className="open-book-model"><span>QUESTION + NOTES</span><strong>AI</strong><small>GROUNDED ANSWER</small></div>
+  </div>;
+
+  if (kind === "agent-action") return <div className="concept-visual agent-action-visual" aria-label="Evidence reaching an AI agent before it searches, decides, and acts">
+    <div className="agent-evidence"><span>FRESH EVIDENCE</span><i /><i /><i /><strong>CHECKED</strong></div>
+    <div className="agent-evidence-arrow">→</div>
+    <div className="agent-core"><small>AI AGENT</small><strong>ACTS WITH CONTEXT</strong><div><span>SEARCH</span><span>DECIDE</span><span>ACT</span></div></div>
   </div>;
 
   if (kind === "blind-spot") return <div className="concept-visual" aria-label="A language model separated from private documents">

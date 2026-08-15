@@ -9,18 +9,18 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "RAG FOR ALL — See what your RAG is thinking",
+  title: "RAG FOR ALL — See How RAG Works, Step by Step",
   description:
-    "A visual RAG laboratory for learning, testing, and comparing every step from document to answer.",
+    "See the evidence behind the answer, then explore every RAG hand-off from document to grounded response.",
   openGraph: {
     title: "RAG FOR ALL",
-    description: "See what your RAG is thinking.",
-    images: [{ url: "/og.png", width: 1536, height: 1024, alt: "RAG FOR ALL visual pipeline" }],
+    description: "See the evidence behind the answer.",
+    images: [{ url: "/og.png", width: 1774, height: 887, alt: "RAG FOR ALL document-to-evidence journey" }],
   },
   twitter: {
     card: "summary_large_image",
     title: "RAG FOR ALL",
-    description: "See what your RAG is thinking.",
+    description: "See the evidence behind the answer.",
     images: ["/og.png"],
   },
 };

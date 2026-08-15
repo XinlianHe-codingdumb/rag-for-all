@@ -21,13 +21,20 @@ test("server-renders the RAG FOR ALL workspace", async () => {
 
   const html = await response.text();
   assert.match(html, /<title>RAG FOR ALL/);
-  assert.match(html, /See what your RAG is thinking/);
+  assert.match(html, /See the evidence behind the answer/);
+  assert.match(html, /AI is powerful/);
+  assert.match(html, /FIRST TIME SEEING RAG/);
+  assert.match(html, /ALREADY KNOW THE BASICS/);
+  assert.match(html, /Meet the idea before the machinery/);
   assert.match(html, /RAG, FROM IDEA TO TRUST/);
-  assert.match(html, /Give the model an open book/);
+  assert.match(html, /Give AI an open book/);
   assert.match(html, /Next card/);
+  assert.match(html, /Back to intro/);
+  assert.match(html, /Skip to interactive pipeline/);
+  assert.doesNotMatch(html, /Start again/);
   assert.match(html, /THE COMPLETE RAG JOURNEY/);
-  assert.match(html, /Click any step to look inside/);
-  assert.doesNotMatch(html, /Start with a document/);
+  assert.match(html, /Turn one document into an answer you can trace/);
+  assert.match(html, /Start with Document/);
   assert.match(html, /Open Document step/);
   assert.match(html, /THE LEARNING LOOP/);
   assert.match(html, /two pipelines/);
@@ -53,5 +60,6 @@ test("keeps API credentials out of client source", async () => {
   assert.match(studio, /The question enters the same space/);
   assert.match(studio, /Similarity finds candidates\. Reranking chooses evidence/);
   assert.match(studio, /SECOND PASS · WHAT REACHED THE LLM/);
-  assert.doesNotMatch(studio, /WHAT HAPPENS|WHY IT MATTERS|FROM THE LAST STEP|WATCH FOR/);
+  assert.match(studio, /Now show me the pipeline/);
+  assert.doesNotMatch(studio, /WHAT HAPPENS|FROM THE LAST STEP|WATCH FOR/);
 });
