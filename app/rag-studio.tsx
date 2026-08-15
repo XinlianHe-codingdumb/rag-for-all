@@ -660,8 +660,8 @@ function OverviewPage({ onStep }: { onStep: (step: StepKey) => void }) {
       <div className="concept-stage" key={conceptIndex}>
         <div className="concept-copy">
           <div className="concept-progress"><span>RAG, FROM IDEA TO TRUST</span><b>{String(conceptIndex + 1).padStart(2, "0")} / {String(RAG_CONCEPTS.length).padStart(2, "0")}</b></div>
-          <p className="concept-kicker">{concept.kicker}</p>
-          <h1>{concept.title}</h1>
+          <h1 className="concept-kicker">{concept.kicker}</h1>
+          <p className="concept-thesis">{concept.title}</p>
           <p className="concept-body">{concept.body}</p>
         </div>
         <ConceptVisual kind={concept.visual} />

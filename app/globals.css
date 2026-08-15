@@ -122,8 +122,8 @@ button { color: inherit; }
 .concept-progress::after { content: ""; width: 70px; height: 1px; order: 1; background: #d9dee7; }
 .concept-progress span { order: 0; }
 .concept-progress b { order: 2; color: var(--concept-accent); font-weight: 650; }
-.concept-kicker { margin: 0 0 10px; color: var(--concept-accent); font-size: 10px; font-weight: 780; letter-spacing: .16em; }
-.concept-copy h1 { max-width: 650px; margin: 0; font-size: clamp(42px,4.2vw,66px); line-height: .98; letter-spacing: -.055em; font-stretch: 108%; font-weight: 680; }
+.concept-kicker { max-width: 650px; margin: 0; color: var(--concept-accent); font-size: var(--type-large); font-weight: 760; line-height: 1.08; letter-spacing: -.045em; }
+.concept-thesis { max-width: 660px; margin: 18px 0 0; color: var(--ink); font-size: var(--type-medium); font-style: italic; font-weight: 540; line-height: 1.55; }
 .concept-body { max-width: 660px; margin: 22px 0 0; color: #626a76; font-size: 15.5px; line-height: 1.65; }
 .concept-takeaway { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 12px; align-items: baseline; max-width: 660px; margin-top: 25px; padding-top: 17px; border-top: 1px solid #e4e7ec; }
 .concept-takeaway span { color: var(--concept-accent); font-size: 8.5px; font-weight: 800; letter-spacing: .14em; }
@@ -425,9 +425,9 @@ select { width: 100%; border: 1px solid var(--line); border-radius: 9px; padding
 /* One readable type system: large, medium, and small. */
 .app-shell :is(p,span,small,button,input,select,label,b,strong,em) { font-size: var(--type-small); }
 .app-shell :is(.rank,pre,.axis) { font-size: var(--type-small); }
-.content-header h1,.concept-copy h1 { font-size: var(--type-large); line-height: 1.08; letter-spacing: -.045em; }
+.content-header h1,.concept-kicker { font-size: var(--type-large); line-height: 1.08; letter-spacing: -.045em; }
 .app-shell h2,.app-shell h3,.compare-method,.visual-halo span,.open-book-model > strong,.trust-question,.moment-card > strong,.choice-visual strong,.measure-visual article > strong { font-size: var(--type-medium); }
-.concept-copy .concept-body { font-size: var(--type-medium); line-height: 1.55; }
+.concept-copy :is(.concept-thesis,.concept-body) { font-size: var(--type-medium); line-height: 1.55; }
 .content-header p:last-child { max-width: 1000px; line-height: 1.65; }
 .eyebrow,.concept-kicker,.concept-progress,.project-card span,.nav-label,.panel-title span,.controls-head span,.query-box span,.prompt-toolbar span,.compare-intro span,.verdict span,.embedding-copy > span { letter-spacing: .06em; }
 
