@@ -837,11 +837,15 @@ function RagDifferenceVisual() {
         <div className="dialogue-label"><span>WITHOUT RAG</span><small>Generic information only</small></div>
         <p className="chat-bubble user-chat">{question}</p>
         <div className="agent-reply"><img src="/doodle-agent-confused.png" alt="A confused empty-handed AI agent scratching its head" /><p className="chat-bubble agent-chat">Sorry, I couldn’t find any information about your date.</p></div>
+        <p className="chat-bubble user-chat follow-up-chat">But she made plans with me yesterday.</p>
+        <div className="agent-reply follow-up-reply"><img src="/doodle-agent-celebrate.png" alt="An oblivious AI agent celebrating the news" /><p className="chat-bubble agent-chat">Congratulations—you have a date! Want help getting ready? I’d be happy to help!</p></div>
       </article>
       <article className="rag-dialogue with-rag">
         <div className="dialogue-label"><span>WITH RAG</span><small>Your latest information</small></div>
         <p className="chat-bubble user-chat">{question}</p>
         <div className="agent-reply"><img src="/doodle-agent.png" alt="A cute AI agent robot using retrieved information" /><p className="chat-bubble agent-chat">I found an update: your date went official with someone else yesterday. Still want to go?</p></div>
+        <p className="chat-bubble user-chat follow-up-chat">Never mind. Leave me alone.</p>
+        <div className="agent-reply follow-up-reply"><img src="/doodle-agent-basketball.png" alt="A caring AI agent holding a basketball from the user’s evening plans" /><p className="chat-bubble agent-chat">You have basketball with friends on your calendar tonight. I hope it cheers you up—and helps you move on.</p></div>
       </article>
     </div>
   </section>;
