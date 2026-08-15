@@ -745,11 +745,6 @@ function OverviewPage({ onStep }: { onStep: (step: StepKey) => void }) {
               <p className="intro-eyebrow">FROM A SMART AGENT TO YOUR AGENT</p>
               <h1>RAG is how an AI agent becomes <span>yours.</span></h1>
               <p className="intro-body"><strong>RAG FOR ALL</strong> lets you see, change, and compare every RAG step—from document upload to the grounded answer. AI agents can act, but without your knowledge they are still generic. RAG connects an agent to your documents, your plans, and your latest facts, so it can finally work like <em>your</em> assistant.</p>
-              <div className="intro-promises" aria-label="What this product makes visible">
-                <span><b>01</b> See every hand-off</span>
-                <span><b>02</b> Change real settings</span>
-                <span><b>03</b> Check every answer</span>
-              </div>
             </div>
             <RagDifferenceVisual />
           </div>
@@ -839,9 +834,9 @@ function RagDifferenceVisual() {
     <header><span>WHY RAG CHANGES THE CONVERSATION</span><strong>Same question. Very different assistant.</strong></header>
     <div className="rag-dialogues">
       <article className="rag-dialogue without-rag">
-        <div className="dialogue-label"><span>WITHOUT RAG</span><small>Generic memory only</small></div>
+        <div className="dialogue-label"><span>WITHOUT RAG</span><small>Generic information only</small></div>
         <p className="chat-bubble user-chat">{question}</p>
-        <div className="agent-reply"><img src="/doodle-agent.png" alt="A cute AI agent robot" /><p className="chat-bubble agent-chat">Sorry, I couldn’t find any information about your date.</p></div>
+        <div className="agent-reply"><img src="/doodle-agent-confused.png" alt="A confused empty-handed AI agent scratching its head" /><p className="chat-bubble agent-chat">Sorry, I couldn’t find any information about your date.</p></div>
       </article>
       <article className="rag-dialogue with-rag">
         <div className="dialogue-label"><span>WITH RAG</span><small>Your latest information</small></div>

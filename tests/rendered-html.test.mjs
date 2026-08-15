@@ -30,9 +30,12 @@ test("server-renders the RAG FOR ALL workspace", async () => {
   assert.match(html, /WHY RAG CHANGES THE CONVERSATION/);
   assert.match(html, /Same question\. Very different assistant/);
   assert.match(html, /went official with someone else yesterday/);
+  assert.match(html, /Generic information only/);
   assert.match(html, /doodle-walking\.png/);
   assert.match(html, /doodle-lounging\.png/);
   assert.match(html, /doodle-agent\.png/);
+  assert.match(html, /doodle-agent-confused\.png/);
+  assert.doesNotMatch(html, /See every hand-off/);
   assert.match(html, /RAG, FROM IDEA TO TRUST/);
   assert.match(html, /Give AI an open book/);
   assert.match(html, /Next card/);

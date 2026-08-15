@@ -800,8 +800,6 @@ select { width: 100%; border: 1px solid var(--line); border-radius: 9px; padding
 .app-shell .intro-main .intro-body { max-width: 1000px; margin-top: 19px; font-size: clamp(14px,1vw,16px); line-height: 1.58; }
 .intro-main .intro-body strong { color: #20242b; font-size: inherit; }
 .intro-main .intro-body em { color: var(--blue); font-size: inherit; font-style: italic; font-weight: 690; }
-.intro-main .intro-promises { margin-top: 17px; padding-top: 14px; }
-
 .rag-difference { min-height: 0; flex: 1; overflow: hidden; border: 1px solid #e2e7ef; border-radius: 22px; background: #fafcff; box-shadow: 0 16px 44px rgba(37,54,85,.055); }
 .rag-difference > header { display: flex; align-items: baseline; justify-content: space-between; gap: 18px; padding: 15px 18px; border-bottom: 1px solid #e6eaf0; background: rgba(255,255,255,.78); }
 .rag-difference > header span { color: var(--blue); font: 750 9px var(--font-geist-mono); letter-spacing: .12em; }
@@ -814,14 +812,12 @@ select { width: 100%; border: 1px solid var(--line); border-radius: 9px; padding
 .with-rag .dialogue-label span { background: #e9f7ef; color: #16724f; }
 .dialogue-label small { color: #8a929e; font-size: 10px; }
 .app-shell .chat-bubble { position: relative; margin: 0; border-radius: 14px; padding: 10px 12px; font-size: clamp(11px,.82vw,13px); line-height: 1.42; }
-.user-chat { align-self: flex-start; max-width: 82%; border: 1px solid #dce3ec; background: #fff; color: #3f4752; }
-.user-chat::after { content: ""; position: absolute; left: 16px; bottom: -6px; width: 10px; height: 10px; border-right: 1px solid #dce3ec; border-bottom: 1px solid #dce3ec; background: #fff; transform: rotate(45deg); }
+.user-chat { align-self: flex-end; max-width: 82%; border: 1px solid #c5e6d3; background: #e5f7ec; color: #245c47; }
+.user-chat::after { content: ""; position: absolute; right: 16px; bottom: -6px; width: 10px; height: 10px; border-right: 1px solid #c5e6d3; border-bottom: 1px solid #c5e6d3; background: #e5f7ec; transform: rotate(45deg); }
 .agent-reply { min-height: 105px; display: grid; grid-template-columns: 92px minmax(0,1fr); align-items: center; gap: 8px; margin-top: auto; }
-.agent-reply img { width: 92px; height: 92px; object-fit: cover; mix-blend-mode: multiply; transform: scale(1.16); }
-.agent-chat { border: 1px solid #dfe3e9; background: #f1f3f6; color: #5c6571; }
-.with-rag .agent-chat { border-color: #cde7da; background: #edf8f2; color: #255e49; }
+.agent-reply img { width: 92px; height: 92px; object-fit: contain; mix-blend-mode: multiply; transform: scale(1.16); }
+.agent-chat { border: 1px solid #dfe3e9; background: #fff; color: #4d5663; }
 .agent-chat::before { content: ""; position: absolute; left: -6px; top: 50%; width: 10px; height: 10px; border-left: 1px solid #dfe3e9; border-bottom: 1px solid #dfe3e9; background: inherit; transform: translateY(-50%) rotate(45deg); }
-.with-rag .agent-chat::before { border-color: #cde7da; }
 
 .intro-choices { min-width: 0; min-height: 0; display: grid; grid-template-rows: repeat(2,minmax(0,1fr)); gap: 16px; }
 .intro-choice { position: relative; min-height: 0; overflow: hidden; display: grid; grid-template-columns: minmax(0,1fr) 130px; grid-template-rows: 1fr 54px; gap: 8px 10px; padding: 17px; border: 1px solid #e1e6ed; border-radius: 22px; background: #fbfcfe; }
