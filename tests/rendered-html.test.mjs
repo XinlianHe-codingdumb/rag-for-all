@@ -50,5 +50,8 @@ test("keeps API credentials out of client source", async () => {
   assert.match(studio, /Embedding converts every chunk into a vector/);
   assert.match(studio, /WHAT THIS A\/B TEST IS TESTING/);
   assert.match(studio, /Drag to move the plane/);
+  assert.match(studio, /The question enters the same space/);
+  assert.match(studio, /Similarity finds candidates\. Reranking chooses evidence/);
+  assert.match(studio, /SECOND PASS · WHAT REACHED THE LLM/);
   assert.doesNotMatch(studio, /WHAT HAPPENS|WHY IT MATTERS|FROM THE LAST STEP|WATCH FOR/);
 });

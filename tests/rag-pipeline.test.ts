@@ -10,6 +10,8 @@ import {
   createLocalEmbeddings,
   extractiveAnswer,
   rankChunks,
+  rerankChunks,
+  retrievalCandidateCount,
 } from "../app/lib/rag-engine";
 import type { ParsedDocument, PipelineConfig } from "../app/lib/rag-types";
 
@@ -94,4 +96,24 @@ test("different chunk sizes produce a different experiment", () => {
   const small = createChunks(document, { ...config, chunkSize: 24, overlap: 4 });
   const large = createChunks(document, { ...config, chunkSize: 80, overlap: 8 });
   assert.ok(small.length > large.length);
+});
+
+test("reranking is a distinct second pass that can change retrieval order", () => {
+  const candidates = [
+    {
+      id: 1, text: "Learning programs and learning culture are discussed throughout the handbook.", tokenCount: 10,
+      pageStart: 1, pageEnd: 1, score: .95, vectorScore: .95, keywordScore: .8, rank: 1,
+    },
+    {
+      id: 2, text: "The annual learning allowance is SGD 1,200 for approved courses.", tokenCount: 12,
+      pageStart: 2, pageEnd: 2, score: .7, vectorScore: .7, keywordScore: .65, rank: 2,
+    },
+  ];
+  const reranked = rerankChunks(candidates, "What is the annual learning allowance amount?", 1);
+  assert.equal(reranked[0].id, 2);
+  assert.equal(reranked[0].retrievalRank, 2);
+  assert.equal(reranked[0].rerankRank, 1);
+  assert.match(reranked[0].rerankReason, /question terms/);
+  assert.equal(retrievalCandidateCount(3, 100), 9);
+  assert.equal(retrievalCandidateCount(12, 100), 24);
 });

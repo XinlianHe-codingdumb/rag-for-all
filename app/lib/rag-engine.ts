@@ -6,6 +6,8 @@ import type {
   PipelineConfig,
   RagChunk,
   RankedChunk,
+  RerankedChunk,
+  RerankSignal,
 } from "./rag-types";
 
 const STOP_WORDS = new Set([
@@ -74,6 +76,7 @@ export function rankChunks(
   query: string,
   config: PipelineConfig,
   embeddings: EmbeddingState,
+  limit = config.topK,
 ): RankedChunk[] {
   const keyword = bm25Scores(chunks.map((chunk) => chunk.text), query);
   const vector = chunks.map((_, index) => cosine(embeddings.queryVector, embeddings.vectors[index] ?? []));
@@ -92,8 +95,37 @@ export function rankChunks(
       return { ...chunk, score, vectorScore, keywordScore, rank: 0 };
     })
     .sort((a, b) => b.score - a.score || a.id - b.id)
-    .slice(0, Math.min(config.topK, chunks.length))
+    .slice(0, Math.min(limit, chunks.length))
     .map((chunk, index) => ({ ...chunk, rank: index + 1 }));
+}
+
+export function retrievalCandidateCount(topK: number, chunkCount: number) {
+  return Math.min(chunkCount, 24, Math.max(topK * 3, 8));
+}
+
+export function rerankChunks(
+  candidates: RankedChunk[],
+  query: string,
+  topK: number,
+  externalSignals?: RerankSignal[],
+): RerankedChunk[] {
+  const external = new Map(externalSignals?.map((signal) => [signal.id, signal]));
+  return candidates
+    .map((candidate) => {
+      const signal = external.get(candidate.id);
+      const local = localRerankSignal(query, candidate);
+      return {
+        ...candidate,
+        retrievalRank: candidate.rank,
+        rerankScore: signal ? clamp01(signal.score) : local.score,
+        rerankRank: 0,
+        rerankReason: signal?.reason || local.reason,
+        rerankSource: signal ? "OpenAI" as const : "Local relevance" as const,
+      };
+    })
+    .sort((a, b) => b.rerankScore - a.rerankScore || a.retrievalRank - b.retrievalRank)
+    .slice(0, Math.min(topK, candidates.length))
+    .map((chunk, index) => ({ ...chunk, rerankRank: index + 1 }));
 }
 
 export function buildPrompt(query: string, ranked: RankedChunk[]) {
@@ -161,6 +193,31 @@ function termsFor(text: string) {
     .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .split(/\s+/)
     .filter((term) => term.length > 1 && !STOP_WORDS.has(term));
+}
+
+function localRerankSignal(query: string, candidate: RankedChunk) {
+  const queryTerms = [...new Set(termsFor(query))];
+  if (!queryTerms.length) return { score: candidate.score, reason: "Kept close to the first-pass retrieval score." };
+  const chunkTerms = new Set(termsFor(candidate.text));
+  const matched = queryTerms.filter((term) => chunkTerms.has(term));
+  const coverage = matched.length / queryTerms.length;
+  const sentenceCoverage = candidate.text
+    .split(/(?<=[.!?])\s+|\n+/)
+    .filter(Boolean)
+    .reduce((best, sentence) => {
+      const sentenceTerms = new Set(termsFor(sentence));
+      const score = queryTerms.filter((term) => sentenceTerms.has(term)).length / queryTerms.length;
+      return Math.max(best, score);
+    }, 0);
+  const score = clamp01(candidate.score * 0.25 + coverage * 0.45 + sentenceCoverage * 0.3);
+  const reason = matched.length
+    ? `Covers ${matched.length} of ${queryTerms.length} important question terms; strongest sentence covers ${Math.round(sentenceCoverage * 100)}%.`
+    : "Shares no important question terms, so the second pass lowers it.";
+  return { score, reason };
+}
+
+function clamp01(value: number) {
+  return Math.max(0, Math.min(1, value));
 }
 
 function tfidf(texts: string[]) {

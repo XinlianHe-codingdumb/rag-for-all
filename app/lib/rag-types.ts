@@ -41,6 +41,27 @@ export type RankedChunk = RagChunk & {
   rank: number;
 };
 
+export type RerankedChunk = RankedChunk & {
+  retrievalRank: number;
+  rerankScore: number;
+  rerankRank: number;
+  rerankReason: string;
+  rerankSource: "OpenAI" | "Local relevance";
+};
+
+export type RerankSignal = {
+  id: number;
+  score: number;
+  reason: string;
+};
+
+export type RerankState = {
+  signals: RerankSignal[];
+  source: "OpenAI";
+  model: string;
+  durationMs: number;
+};
+
 export type EmbeddingState = {
   vectors: number[][];
   queryVector: number[];

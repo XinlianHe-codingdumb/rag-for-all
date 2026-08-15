@@ -11,13 +11,18 @@ import {
   pageLabel,
   projectVector,
   rankChunks,
+  rerankChunks,
+  retrievalCandidateCount,
 } from "./lib/rag-engine";
 import type {
   AnswerState,
   EmbeddingState,
   ParsedDocument,
   PipelineConfig,
+  RagChunk,
   RankedChunk,
+  RerankedChunk,
+  RerankState,
 } from "./lib/rag-types";
 
 type StepKey = "overview" | "upload" | "parse" | "chunk" | "embed" | "retrieve" | "rerank" | "prompt" | "answer" | "compare";
@@ -136,6 +141,8 @@ export function RagStudio() {
   const [query, setQuery] = useState("How much can I spend on learning?");
   const [remoteEmbedding, setRemoteEmbedding] = useState<EmbeddingState | null>(null);
   const [embeddingKey, setEmbeddingKey] = useState("");
+  const [remoteRerank, setRemoteRerank] = useState<RerankState | null>(null);
+  const [rerankKey, setRerankKey] = useState("");
   const [answer, setAnswer] = useState<AnswerState | null>(null);
   const [apiStatus, setApiStatus] = useState<ApiStatus | null>(null);
   const [notice, setNotice] = useState("");
@@ -163,10 +170,21 @@ export function RagStudio() {
   const embedding = embeddingKey === currentEmbeddingKey && remoteEmbedding?.vectors.length === chunks.length
     ? remoteEmbedding
     : localEmbedding;
-  const ranked = useMemo(() => rankChunks(chunks, query, config, embedding), [chunks, query, config, embedding]);
-  const prompt = useMemo(() => buildPrompt(query, ranked), [query, ranked]);
-  const embeddingPoints = useMemo(() => {
-    const raw = embedding.vectors.map((vector, index) => projectVector(vector, index));
+  const candidateCount = retrievalCandidateCount(config.topK, chunks.length);
+  const retrievedCandidates = useMemo(
+    () => rankChunks(chunks, query, config, embedding, candidateCount),
+    [chunks, query, config, embedding, candidateCount],
+  );
+  const currentRerankKey = `${currentEmbeddingKey}:${config.method}:${config.topK}`;
+  const activeRerank = rerankKey === currentRerankKey ? remoteRerank : null;
+  const finalEvidence = useMemo(
+    () => rerankChunks(retrievedCandidates, query, config.topK, activeRerank?.signals),
+    [retrievedCandidates, query, config.topK, activeRerank],
+  );
+  const prompt = useMemo(() => buildPrompt(query, finalEvidence), [query, finalEvidence]);
+  const projection = useMemo(() => {
+    const vectors = [embedding.queryVector, ...embedding.vectors];
+    const raw = vectors.map((vector, index) => projectVector(vector, index));
     if (raw.length <= 1) return raw.map(() => ({ x: 50, y: 50 }));
     const minX = Math.min(...raw.map((point) => point.x));
     const maxX = Math.max(...raw.map((point) => point.x));
@@ -178,21 +196,27 @@ export function RagStudio() {
       x: rangeX > 0.4 ? 14 + ((point.x - minX) / rangeX) * 72 : 50 + Math.cos(index * 2.4) * 30,
       y: rangeY > 0.4 ? 14 + ((point.y - minY) / rangeY) * 72 : 50 + Math.sin(index * 2.4) * 30,
     }));
-  }, [embedding.vectors]);
-  const retrievedChunkIds = useMemo(() => new Set(ranked.map((item) => item.id)), [ranked]);
+  }, [embedding.queryVector, embedding.vectors]);
+  const queryPoint = projection[0] ?? { x: 50, y: 50 };
+  const embeddingPoints = projection.slice(1);
+  const retrievedChunkIds = useMemo(() => new Set(retrievedCandidates.map((item) => item.id)), [retrievedCandidates]);
+  const finalChunkIds = useMemo(() => new Set(finalEvidence.map((item) => item.id)), [finalEvidence]);
   const selectedVector = chunks.find((chunk) => chunk.id === selectedVectorId) ?? null;
 
   const comparisons = useMemo(() => (["A", "B"] as const).map((name) => {
     const settings = experiments[name];
     const candidateChunks = document ? createChunks(document, settings) : [];
     const candidateEmbedding = createLocalEmbeddings(candidateChunks, query);
-    const results = rankChunks(candidateChunks, query, settings, candidateEmbedding);
+    const poolSize = retrievalCandidateCount(settings.topK, candidateChunks.length);
+    const retrievals = rankChunks(candidateChunks, query, settings, candidateEmbedding, poolSize);
+    const results = rerankChunks(retrievals, query, settings.topK);
     return {
       name,
       settings,
       chunks: candidateChunks.length,
       contextTokens: results.reduce((sum, item) => sum + item.tokenCount, 0),
-      best: results[0]?.score ?? 0,
+      best: results[0]?.rerankScore ?? 0,
+      retrievals,
       results,
     };
   }), [document, experiments, query]);
@@ -204,6 +228,8 @@ export function RagStudio() {
     }));
     setPipelineRan(false);
     setAnswer(null);
+    setRemoteRerank(null);
+    setRerankKey("");
   };
 
   const chooseFile = () => inputRef.current?.click();
@@ -251,6 +277,8 @@ export function RagStudio() {
       setDocument(parsed);
       setRemoteEmbedding(null);
       setEmbeddingKey("");
+      setRemoteRerank(null);
+      setRerankKey("");
       setActiveStep("parse");
       setNotice(`${file.name} parsed successfully: ${parsed.pages.length} page${parsed.pages.length === 1 ? "" : "s"}, ${parsed.text.length.toLocaleString()} characters.`);
 
@@ -308,14 +336,36 @@ export function RagStudio() {
       setRemoteEmbedding(null);
       setEmbeddingKey("");
     }
-    const nextResults = rankChunks(chunks, query, config, nextEmbedding);
+    const nextCandidates = rankChunks(chunks, query, config, nextEmbedding, retrievalCandidateCount(config.topK, chunks.length));
+    setBusy("Reranking the candidate evidence…");
+    let rerankState: RerankState | null = null;
+    try {
+      const response = await fetch("/api/rerank", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: query, candidates: nextCandidates.map((item) => ({ id: item.id, text: item.text })) }),
+      });
+      if (response.ok) {
+        const body = await response.json() as RerankState;
+        rerankState = { ...body, source: "OpenAI" };
+        setRemoteRerank(rerankState);
+        setRerankKey(currentRerankKey);
+      } else {
+        setRemoteRerank(null);
+        setRerankKey("");
+      }
+    } catch {
+      setRemoteRerank(null);
+      setRerankKey("");
+    }
+    const nextResults = rerankChunks(nextCandidates, query, config.topK, rerankState?.signals);
     setPipelineRan(true);
     setBusy(null);
-    setNotice(`Experiment ${activeExperiment} retrieved ${nextResults.length} of ${chunks.length} chunks using ${nextEmbedding.source}.`);
+    setNotice(`Experiment ${activeExperiment} retrieved ${nextCandidates.length} candidates, then reranked them to ${nextResults.length} final chunks using ${rerankState ? "OpenAI" : "a local relevance fallback"}.`);
     void saveRun(nextResults, nextEmbedding);
   };
 
-  const saveRun = async (results: RankedChunk[], usedEmbedding: EmbeddingState) => {
+  const saveRun = async (results: RerankedChunk[], usedEmbedding: EmbeddingState) => {
     if (!document?.persisted) return;
     try {
       await fetch("/api/runs", {
@@ -328,7 +378,7 @@ export function RagStudio() {
           config,
           result: {
             embeddingSource: usedEmbedding.source,
-            chunks: results.map((item) => ({ id: item.id, score: item.score, pageStart: item.pageStart, pageEnd: item.pageEnd })),
+            chunks: results.map((item) => ({ id: item.id, retrievalScore: item.score, rerankScore: item.rerankScore, pageStart: item.pageStart, pageEnd: item.pageEnd })),
           },
         }),
       });
@@ -338,7 +388,7 @@ export function RagStudio() {
   };
 
   const generateAnswer = async () => {
-    if (!ranked.length) return;
+    if (!finalEvidence.length) return;
     setBusy("Generating a grounded answer…");
     const startedAt = performance.now();
     try {
@@ -347,7 +397,7 @@ export function RagStudio() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           question: query,
-          context: ranked.map((item) => `[Chunk ${item.id} | ${pageLabel(item.pageStart, item.pageEnd)}]\n${item.text}`),
+          context: finalEvidence.map((item) => `[Chunk ${item.id} | ${pageLabel(item.pageStart, item.pageEnd)}]\n${item.text}`),
         }),
       });
       if (response.ok) {
@@ -362,11 +412,11 @@ export function RagStudio() {
         });
         setNotice(`Grounded answer generated with ${body.model}. Follow the chunk citations before trusting it.`);
       } else {
-        setAnswer({ text: extractiveAnswer(query, ranked), source: "Extractive fallback", model: "Local sentence selection", durationMs: Math.round(performance.now() - startedAt) });
+        setAnswer({ text: extractiveAnswer(query, finalEvidence), source: "Extractive fallback", model: "Local sentence selection", durationMs: Math.round(performance.now() - startedAt) });
         setNotice("OpenAI is not configured, so the answer uses retrieved sentences directly. No paid API call was made.");
       }
     } catch {
-      setAnswer({ text: extractiveAnswer(query, ranked), source: "Extractive fallback", model: "Local sentence selection", durationMs: Math.round(performance.now() - startedAt) });
+      setAnswer({ text: extractiveAnswer(query, finalEvidence), source: "Extractive fallback", model: "Local sentence selection", durationMs: Math.round(performance.now() - startedAt) });
       setNotice("The model API was unavailable, so RAG FOR ALL used a local extractive answer.");
     } finally {
       setBusy(null);
@@ -550,11 +600,12 @@ export function RagStudio() {
                     {chunks.map((chunk, index) => {
                       const point = embeddingPoints[index] ?? { x: 50, y: 50 };
                       const isRetrieved = retrievedChunkIds.has(chunk.id);
-                      return <button className={`vector-dot ${isRetrieved ? "retrieved" : ""} ${selectedVectorId === chunk.id ? "selected" : ""}`} style={{ left: `${point.x}%`, top: `${point.y}%` }} key={chunk.id} title={`Chunk ${chunk.id} · ${pageLabel(chunk.pageStart, chunk.pageEnd)}`} type="button" onClick={() => setSelectedVectorId(chunk.id)}>{chunk.id}</button>;
+                      const isFinal = finalChunkIds.has(chunk.id);
+                      return <button className={`vector-dot ${isRetrieved ? "retrieved" : ""} ${isFinal ? "final" : ""} ${selectedVectorId === chunk.id ? "selected" : ""}`} style={{ left: `${point.x}%`, top: `${point.y}%` }} key={chunk.id} title={`Chunk ${chunk.id} · ${pageLabel(chunk.pageStart, chunk.pageEnd)}`} type="button" onClick={() => setSelectedVectorId(chunk.id)}>{chunk.id}</button>;
                     })}
                     <div className="axis x">meaning projection →</div><div className="axis y">topic difference →</div>
                   </div>
-                  <div className="map-legend"><span><i className="retrieved" /> Retrieved for this question</span><span><i /> Other chunk</span></div>
+                  <div className="map-legend"><span><i className="final" /> Final evidence</span><span><i className="retrieved" /> Retrieval candidate</span><span><i /> Other chunk</span></div>
                   <p className="map-help">Drag to move the plane. Use − and + to zoom.</p>
                 </div>
                 <div className="embedding-copy">
@@ -569,17 +620,28 @@ export function RagStudio() {
               </section>
             )}
 
-            {(activeStep === "retrieve" || activeStep === "rerank") && (
+            {activeStep === "retrieve" && (
               <section className="retrieval-stage">
-                <QuestionBox query={query} setQuery={(value) => { setQuery(value); setAnswer(null); setPipelineRan(false); }} run={() => void runPipeline()} busy={Boolean(busy)} />
+                <QuestionBox query={query} setQuery={(value) => { setQuery(value); setAnswer(null); setPipelineRan(false); }} run={() => void runPipeline()} busy={Boolean(busy)} buttonLabel="Find candidates" />
                 {config.topK > chunks.length && chunks.length > 0 && <div className="inline-warning">You asked for {config.topK}, but this document only has {chunks.length} chunks. Tiny document, tiny buffet.</div>}
+                <RetrievalMap chunks={chunks} points={embeddingPoints} queryPoint={queryPoint} candidates={retrievedCandidates} finalIds={finalChunkIds} query={query} />
                 <div className="retrieval-layout">
                   <div className="results-panel">
-                    <div className="panel-title"><div><span>TOP {Math.min(config.topK, chunks.length)}</span><h2>{activeStep === "rerank" ? "Evidence with score breakdown" : "Closest chunks"}</h2></div><small>{config.method} · {embedding.source}</small></div>
-                    {ranked.map((item) => <ResultCard item={item} key={item.id} showBreakdown={activeStep === "rerank" || mode === "Advanced"} documentName={document?.name ?? "Document"} />)}
-                    {!ranked.length && <EmptyState text="Ask a question after uploading a document." />}
+                    <div className="panel-title"><div><span>CANDIDATE POOL · {retrievedCandidates.length}</span><h2>Fast search casts a wider net.</h2></div><small>{config.method} · {embedding.source}</small></div>
+                    {retrievedCandidates.map((item) => <ResultCard item={item} key={item.id} showBreakdown={mode === "Advanced"} documentName={document?.name ?? "Document"} />)}
+                    {!retrievedCandidates.length && <EmptyState text="Ask a question after uploading a document." />}
                   </div>
-                  <RetrievalControls config={config} update={updateConfig} embedding={embedding} />
+                  <RetrievalControls config={config} update={updateConfig} embedding={embedding} candidateCount={candidateCount} />
+                </div>
+              </section>
+            )}
+
+            {activeStep === "rerank" && (
+              <section className="rerank-stage">
+                <QuestionBox query={query} setQuery={(value) => { setQuery(value); setAnswer(null); setPipelineRan(false); }} run={() => void runPipeline()} busy={Boolean(busy)} buttonLabel="Run both passes" />
+                <div className="rerank-layout">
+                  <RerankFlow candidates={retrievedCandidates} finalEvidence={finalEvidence} source={activeRerank?.source ?? "Local relevance"} model={activeRerank?.model} />
+                  <RetrievalControls config={config} update={updateConfig} embedding={embedding} candidateCount={candidateCount} />
                 </div>
               </section>
             )}
@@ -588,17 +650,17 @@ export function RagStudio() {
               <section className="prompt-stage">
                 <div className="prompt-toolbar"><div><span>FINAL PAYLOAD</span><h2>This is what the answer model will actually see.</h2></div><button type="button" onClick={() => void navigator.clipboard?.writeText(prompt)}>Copy prompt</button></div>
                 <pre>{prompt}</pre>
-                <div className="prompt-stats"><Stat label="Context chunks" value={ranked.length.toString()} /><Stat label="Exact prompt tokens" value={countTextTokens(prompt).toLocaleString()} /><Stat label="Embedding source" value={embedding.source} accent={embedding.source === "OpenAI"} /></div>
+                <div className="prompt-stats"><Stat label="Context chunks" value={finalEvidence.length.toString()} /><Stat label="Exact prompt tokens" value={countTextTokens(prompt).toLocaleString()} /><Stat label="Reranker" value={activeRerank?.source ?? "Local relevance"} accent={Boolean(activeRerank)} /></div>
               </section>
             )}
 
             {activeStep === "answer" && (
               <section className="answer-stage">
                 <div className="answer-card">
-                  <div className="answer-head"><span className={`preview-badge ${answer?.source === "OpenAI" ? "live" : ""}`}>{answer?.source ?? "NOT GENERATED"}</span><button type="button" onClick={() => void generateAnswer()} disabled={Boolean(busy) || !ranked.length}>{answer ? "Generate again" : "Generate grounded answer"}</button></div>
+                  <div className="answer-head"><span className={`preview-badge ${answer?.source === "OpenAI" ? "live" : ""}`}>{answer?.source ?? "NOT GENERATED"}</span><button type="button" onClick={() => void generateAnswer()} disabled={Boolean(busy) || !finalEvidence.length}>{answer ? "Generate again" : "Generate grounded answer"}</button></div>
                   <h2>{query}</h2>
                   <p className="answer-text">{answer?.text ?? "Generate an answer after reviewing the retrieved evidence. RAG is more trustworthy when the receipts arrive before the confidence."}</p>
-                  <div className="citations">{ranked.map((item) => <button type="button" key={item.id} onClick={() => setActiveStep("retrieve")}>Chunk {item.id} · {pageLabel(item.pageStart, item.pageEnd)}</button>)}</div>
+                  <div className="citations">{finalEvidence.map((item) => <button type="button" key={item.id} onClick={() => setActiveStep("rerank")}>Chunk {item.id} · {pageLabel(item.pageStart, item.pageEnd)}</button>)}</div>
                 </div>
                 <div className="answer-metrics">
                   <Stat label="Answer model" value={answer?.model ?? apiStatus?.responseModel ?? "Not configured"} />
@@ -612,19 +674,27 @@ export function RagStudio() {
 
             {activeStep === "compare" && (
               <section className="compare-stage">
-                <div className="compare-intro"><span>WHAT THIS A/B TEST IS TESTING</span><h2>Same knowledge. Same question. Different RAG settings.</h2><p>Only chunking and retrieval settings change between A and B. The test shows how those choices change the evidence—and how much context—sent to the LLM.</p></div>
+                <div className="compare-intro"><span>WHAT THIS A/B TEST IS TESTING</span><h2>Same knowledge. Same question. Different RAG settings.</h2><p>Only chunking and retrieval settings change between A and B. Both sides use the same local second-pass reranker, so you can see which settings changed the final evidence. This view does not generate two LLM answers yet.</p></div>
                 <div className="compare-rules">
                   <article><span>KEPT THE SAME</span><strong>Document + question</strong><p>Both experiments solve the exact same task.</p></article>
                   <article><span>CHANGED</span><strong>Chunking + retrieval</strong><p>Size, overlap, strategy, method, and Top K can differ.</p></article>
                   <article><span>WHAT TO JUDGE</span><strong>Evidence quality first</strong><p>Then compare context size, latency, and cost.</p></article>
                 </div>
-                <QuestionBox query={query} setQuery={(value) => setQuery(value)} run={() => setNotice("Both experiments recalculate instantly with local retrieval.")} busy={false} buttonLabel="Refresh comparison" />
+                <div className="comparison-deltas" aria-label="Settings changed from Experiment A to Experiment B">
+                  <SettingDelta label="Chunk size" before={`${experiments.A.chunkSize}`} after={`${experiments.B.chunkSize}`} />
+                  <SettingDelta label="Overlap" before={`${experiments.A.overlap}`} after={`${experiments.B.overlap}`} />
+                  <SettingDelta label="Splitting" before={experiments.A.strategy} after={experiments.B.strategy} />
+                  <SettingDelta label="Search" before={experiments.A.method} after={experiments.B.method} />
+                  <SettingDelta label="Final Top K" before={`${experiments.A.topK}`} after={`${experiments.B.topK}`} />
+                </div>
+                <QuestionBox query={query} setQuery={(value) => setQuery(value)} run={() => setNotice("Both experiments recalculated with local retrieval and the same local second-pass reranker.")} busy={false} buttonLabel="Refresh comparison" />
                 <div className="compare-grid">{comparisons.map((item) => <article className={`compare-card ${activeExperiment === item.name ? "selected" : ""}`} key={item.name}>
                   <header><div><strong>{item.name}</strong><span>{item.name === "A" ? "BASELINE" : "CHALLENGER"}</span></div><button type="button" onClick={() => setActiveExperiment(item.name)}>Edit {item.name}</button></header>
                   <div className="compare-method">Experiment {item.name}<span>{item.settings.method} search</span></div>
-                  <p className="compare-recipe">Cuts the document into <b>{item.settings.chunkSize}-token chunks</b> with <b>{item.settings.overlap} tokens of overlap</b>, uses <b>{item.settings.strategy.toLowerCase()} splitting</b>, and sends the best <b>{item.settings.topK} passages</b> forward.</p>
-                  <div className="compare-metrics"><Stat label="Chunk size" value={`${item.settings.chunkSize} tokens`} /><Stat label="Overlap" value={`${item.settings.overlap} tokens`} /><Stat label="Total chunks" value={String(item.chunks)} /><Stat label="Top K returned" value={String(item.results.length)} /><Stat label="Context sent" value={`${item.contextTokens} tokens`} /><Stat label="Best match" value={`${Math.round(item.best * 100)}%`} accent={item.best === Math.max(...comparisons.map((candidate) => candidate.best))} /></div>
-                  <div className="compare-evidence"><strong>WHAT REACHED THE LLM</strong><div>{item.results.slice(0, 5).map((result) => <span key={result.id}>Chunk {result.id} · {Math.round(result.score * 100)}%</span>)}</div></div>
+                  <p className="compare-recipe">Cuts the document into <b>{item.settings.chunkSize}-token chunks</b> with <b>{item.settings.overlap} tokens of overlap</b>, uses <b>{item.settings.strategy.toLowerCase()} splitting</b>, then keeps <b>{item.settings.topK} passages after reranking</b>.</p>
+                  <div className="compare-metrics"><Stat label="Total chunks" value={String(item.chunks)} /><Stat label="Candidate pool" value={String(item.retrievals.length)} /><Stat label="Final evidence" value={String(item.results.length)} /><Stat label="Context sent" value={`${item.contextTokens} tokens`} /><Stat label="Best second-pass score" value={`${Math.round(item.best * 100)}%`} /></div>
+                  <div className="compare-evidence"><strong>FIRST PASS · RETRIEVE</strong><div>{item.retrievals.slice(0, 6).map((result) => <span key={result.id}>#{result.rank} Chunk {result.id}</span>)}</div></div>
+                  <div className="compare-evidence final"><strong>SECOND PASS · WHAT REACHED THE LLM</strong><div>{item.results.slice(0, 5).map((result) => <span key={result.id}>#{result.rerankRank} Chunk {result.id} · {Math.round(result.rerankScore * 100)}%</span>)}</div></div>
                 </article>)}</div>
                 <div className="verdict"><div className="verdict-icon">↗</div><div><span>WHAT THIS RUN SHOWS</span><strong>{comparisonVerdict(comparisons)}</strong><p>Do not choose a permanent winner from one question. Repeat this test with easy, exact-term, ambiguous, and multi-part questions.</p></div></div>
               </section>
@@ -746,6 +816,68 @@ function QuestionBox({ query, setQuery, run, busy, buttonLabel = "Retrieve evide
   return <div className="query-box"><span>YOUR QUESTION</span><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Question" /><button type="button" onClick={run} disabled={busy || !query.trim()}>{busy ? "Working…" : buttonLabel}</button></div>;
 }
 
+function RetrievalMap({ chunks, points, queryPoint, candidates, finalIds, query }: { chunks: RagChunk[]; points: Array<{ x: number; y: number }>; queryPoint: { x: number; y: number }; candidates: RankedChunk[]; finalIds: Set<number>; query: string }) {
+  const candidateById = new Map(candidates.map((candidate) => [candidate.id, candidate]));
+  return <section className="retrieval-map-card">
+    <div className="retrieval-space" aria-label="Question vector connected to its nearest chunk candidates">
+      <div className="retrieval-space-grid" />
+      {candidates.map((candidate) => {
+        const point = points[candidate.id - 1] ?? { x: 50, y: 50 };
+        return <i className="retrieval-link" style={retrievalLineStyle(queryPoint, point, candidate.score)} key={`link-${candidate.id}`} />;
+      })}
+      {chunks.map((chunk) => {
+        const point = points[chunk.id - 1] ?? { x: 50, y: 50 };
+        const candidate = candidateById.get(chunk.id);
+        return <span className={`retrieval-space-dot ${candidate ? "candidate" : ""} ${finalIds.has(chunk.id) ? "final" : ""}`} style={{ left: `${point.x}%`, top: `${point.y}%` }} title={`Chunk ${chunk.id}`} key={chunk.id}>{candidate ? candidate.rank : ""}</span>;
+      })}
+      <span className="query-vector" style={{ left: `${queryPoint.x}%`, top: `${queryPoint.y}%` }}>Q</span>
+    </div>
+    <div className="retrieval-map-copy">
+      <span>FIRST PASS · FAST SEARCH</span><h2>The question enters the same space.</h2>
+      <p><strong>Q</strong> is the question vector. Numbered dots are the broad candidate pool; lower numbers ranked higher in the first pass. The highlighted dots survive the second pass and become final evidence.</p>
+      <div className="question-preview"><small>QUESTION</small><strong>{query}</strong></div>
+      <div className="retrieval-map-legend"><span><i className="query" /> Question</span><span><i className="candidate" /> Candidate</span><span><i className="final" /> Final evidence</span></div>
+      <small className="projection-note">The lines explain the relationship. Their apparent 2D length is illustrative; ranking uses the original high-dimensional scores.</small>
+    </div>
+  </section>;
+}
+
+function RerankFlow({ candidates, finalEvidence, source, model }: { candidates: RankedChunk[]; finalEvidence: RerankedChunk[]; source: "OpenAI" | "Local relevance"; model?: string }) {
+  return <section className="rerank-board">
+    <header><div><span>SECOND PASS · CAREFUL READING</span><h2>Similarity finds candidates. Reranking chooses evidence.</h2></div><small>{source}{model ? ` · ${model}` : ""}</small></header>
+    <div className="rerank-columns">
+      <div className="rerank-column first-pass"><div className="rerank-column-title"><span>01 · RETRIEVE</span><strong>{candidates.length} candidates</strong><small>Fast cosine / BM25 ranking</small></div>
+        {candidates.slice(0, 10).map((item) => <article key={item.id}><b>{item.rank}</b><span><strong>Chunk {item.id}</strong><small>{Math.round(item.score * 100)}% first-pass match</small></span></article>)}
+      </div>
+      <div className="rerank-gate"><span>QUESTION<br />+<br />PASSAGE</span><b>→</b><small>Read together</small></div>
+      <div className="rerank-column second-pass"><div className="rerank-column-title"><span>02 · RERANK</span><strong>{finalEvidence.length} final chunks</strong><small>Direct answer relevance</small></div>
+        {finalEvidence.map((item) => {
+          const movement = item.retrievalRank - item.rerankRank;
+          return <article key={item.id}><b>{item.rerankRank}</b><span><strong>Chunk {item.id}</strong><small>{item.rerankReason}</small></span><em className={movement > 0 ? "up" : movement < 0 ? "down" : "same"}>{movement > 0 ? `↑ ${movement}` : movement < 0 ? `↓ ${Math.abs(movement)}` : "—"}</em></article>;
+        })}
+      </div>
+    </div>
+    <footer><strong>{source === "OpenAI" ? "The model reread every candidate against the complete question." : "Local fallback: question-term coverage and strongest-sentence coverage created a real second score."}</strong><span>Only the right-hand column continues to Prompt.</span></footer>
+  </section>;
+}
+
+function SettingDelta({ label, before, after }: { label: string; before: string; after: string }) {
+  const changed = before !== after;
+  return <div className={changed ? "changed" : "same"}><span>{label}</span><strong>{before}</strong><b>→</b><strong>{after}</strong></div>;
+}
+
+function retrievalLineStyle(from: { x: number; y: number }, to: { x: number; y: number }, score: number) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  return {
+    left: `${from.x}%`,
+    top: `${from.y}%`,
+    width: `${Math.hypot(dx, dy)}%`,
+    opacity: Math.max(.2, Math.min(.78, score)),
+    transform: `rotate(${Math.atan2(dy, dx) * 180 / Math.PI}deg)`,
+  };
+}
+
 function ChunkControls({ config, mode, update, experiment }: { config: PipelineConfig; mode: "Basic" | "Advanced"; update: (patch: Partial<PipelineConfig>) => void; experiment: ExperimentName }) {
   return <div className="controls-panel"><div className="controls-head"><span>EXPERIMENT {experiment}</span><strong>Chunk settings</strong></div>
     <RangeSetting label="Chunk size" value={config.chunkSize} min={40} max={800} step={20} help="Exact BPE tokens per chunk" onValue={(value) => update({ chunkSize: value, overlap: Math.min(config.overlap, value - 1) })} />
@@ -755,10 +887,11 @@ function ChunkControls({ config, mode, update, experiment }: { config: PipelineC
   </div>;
 }
 
-function RetrievalControls({ config, update, embedding }: { config: PipelineConfig; update: (patch: Partial<PipelineConfig>) => void; embedding: EmbeddingState }) {
+function RetrievalControls({ config, update, embedding, candidateCount }: { config: PipelineConfig; update: (patch: Partial<PipelineConfig>) => void; embedding: EmbeddingState; candidateCount: number }) {
   return <div className="controls-panel compact"><div className="controls-head"><span>SEARCH SETTINGS</span><strong>What gets through?</strong></div>
-    <RangeSetting label="Top K" value={config.topK} min={1} max={12} step={1} onValue={(value) => update({ topK: value })} />
+    <RangeSetting label="Final Top K" value={config.topK} min={1} max={12} step={1} help="Chunks kept after reranking" onValue={(value) => update({ topK: value })} />
     <label><span>Method</span><select value={config.method} onChange={(event) => update({ method: event.target.value as PipelineConfig["method"] })}><option>Vector</option><option>Hybrid</option><option>Keyword</option></select></label>
+    <div className="model-row"><span>First-pass candidate pool</span><strong>{candidateCount} chunks</strong></div>
     <div className="model-row"><span>Vector source</span><strong>{embedding.source}</strong></div>
     <div className="plain-tip"><strong>Hybrid search</strong><p>Semantic similarity meets exact words. Useful when product names and policy numbers refuse to be poetic.</p></div>
   </div>;
@@ -781,15 +914,13 @@ function ResultCard({ item, showBreakdown, documentName }: { item: RankedChunk; 
   return <article className="result-card"><div className="rank">{item.rank}</div><div className="result-main"><header><strong>Chunk {item.id}</strong><span>{documentName} · {pageLabel(item.pageStart, item.pageEnd)}</span></header><p>{item.text}</p>{showBreakdown && <footer><span>Vector {Math.round(item.vectorScore * 100)}%</span><span>Keyword {Math.round(item.keywordScore * 100)}%</span></footer>}</div><div className="score"><strong>{Math.round(item.score * 100)}%</strong><span>match</span></div></article>;
 }
 
-function comparisonVerdict(comparisons: Array<{ name: ExperimentName; best: number; contextTokens: number }>) {
+function comparisonVerdict(comparisons: Array<{ name: ExperimentName; best: number; contextTokens: number; results: RerankedChunk[] }>) {
   const [a, b] = comparisons;
   if (!a || !b) return "Run both experiments to compare them.";
-  const winner = b.best > a.best ? b : a;
-  const leaner = b.contextTokens < a.contextTokens ? b : a;
-  const scoreSummary = `${Math.round(a.best * 100)}% for A versus ${Math.round(b.best * 100)}% for B`;
-  const tokenSummary = `${a.contextTokens} tokens for A versus ${b.contextTokens} for B`;
-  if (winner.name === leaner.name) return `Experiment ${winner.name} has both the stronger top match (${scoreSummary}) and the smaller context (${tokenSummary}).`;
-  return `Experiment ${winner.name} has the stronger top match (${scoreSummary}), while Experiment ${leaner.name} sends less context (${tokenSummary}).`;
+  const aPages = new Set(a.results.flatMap((item) => Array.from({ length: item.pageEnd - item.pageStart + 1 }, (_, index) => item.pageStart + index)));
+  const bPages = new Set(b.results.flatMap((item) => Array.from({ length: item.pageEnd - item.pageStart + 1 }, (_, index) => item.pageStart + index)));
+  const sharedPages = [...aPages].filter((page) => bPages.has(page)).length;
+  return `A sends ${a.contextTokens} context tokens and B sends ${b.contextTokens}. Their final evidence shares ${sharedPages} source page${sharedPages === 1 ? "" : "s"}; inspect the passages before calling either setup better.`;
 }
 
 function friendlyProjectName(name: string) {
