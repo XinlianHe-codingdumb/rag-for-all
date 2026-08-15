@@ -50,23 +50,16 @@ button { color: inherit; }
 .app-shell .topbar-title {
   margin: 0;
   max-width: calc(100% - 48px);
-  background: linear-gradient(105deg,#147fc5 0%,#7dd5f6 17%,#f8fdff 31%,#5abce9 44%,#0e73bc 57%,#e4f9ff 72%,#38a9e5 85%,#bdeeff 100%);
-  background-size: 120% 100%;
-  background-position: center;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  -webkit-text-fill-color: transparent;
-  -webkit-text-stroke: .5px rgba(14,104,166,.3);
-  filter: drop-shadow(0 1px 0 rgba(255,255,255,.95)) drop-shadow(0 2px 2px rgba(25,111,169,.24));
+  color: #17191d;
   font-size: clamp(26px,1.9vw,34px);
-  font-stretch: 108%;
+  font-stretch: 105%;
+  font-weight: 720;
   line-height: 1.12;
-  letter-spacing: -.035em;
+  letter-spacing: -.045em;
   text-align: center;
 }
-.app-shell .topbar-title strong { color: transparent; -webkit-text-fill-color: transparent; font-size: inherit; font-weight: 820; letter-spacing: .035em; }
-.app-shell .topbar-title span { color: transparent; -webkit-text-fill-color: transparent; font-size: inherit; font-weight: 620; }
+.app-shell .topbar-title strong { color: inherit; font-size: inherit; font-weight: 820; letter-spacing: -.025em; }
+.app-shell .topbar-title span { color: inherit; font-size: inherit; font-weight: 680; }
 
 .workspace { display: grid; grid-template-columns: 254px minmax(0, 1fr); min-height: calc(100vh - var(--topbar-height)); }
 .sidebar { background: var(--sidebar); border-right: 1px solid var(--line); padding: 20px 14px; display: flex; flex-direction: column; }
