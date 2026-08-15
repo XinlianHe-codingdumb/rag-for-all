@@ -41,6 +41,53 @@ const STEPS: Array<{ key: Exclude<StepKey, "overview">; number: string; title: s
   { key: "compare", number: "A/B", title: "Compare", note: "Receipts, not vibes", icon: "⇄" },
 ];
 
+type ConceptVisualKind = "blind-spot" | "readable" | "chunks" | "meaning-map" | "evidence" | "receipts";
+
+const RAG_CONCEPTS: Array<{ kicker: string; title: string; body: string; takeaway: string; visual: ConceptVisualKind }> = [
+  {
+    kicker: "WHY RAG EXISTS",
+    title: "The model has a blind spot.",
+    body: "An LLM can write fluently, but it cannot magically read the file on your desk. RAG gives it a temporary, searchable memory built from sources you choose.",
+    takeaway: "RAG does not retrain the model. It brings useful evidence into the conversation.",
+    visual: "blind-spot",
+  },
+  {
+    kicker: "01 · DOCUMENT + PARSE",
+    title: "First, make the file readable.",
+    body: "Your PDF or DOCX is made for humans, not retrieval. The parser recovers its text, page boundaries, and structure so every later step has something clean to work with.",
+    takeaway: "If parsing loses a heading, table, or page, the rest of the pipeline never gets to see it.",
+    visual: "readable",
+  },
+  {
+    kicker: "02 · CHUNK",
+    title: "Cut the text into useful bites.",
+    body: "Searching an entire book at once is clumsy. Chunking creates smaller passages that can be found and quoted, with overlap to keep an important sentence from being sliced in half.",
+    takeaway: "Small chunks are precise. Larger chunks carry more context. The useful size depends on the question.",
+    visual: "chunks",
+  },
+  {
+    kicker: "03 · EMBED + RETRIEVE",
+    title: "Turn meaning into a map.",
+    body: "Embeddings convert each chunk and the question into coordinates. Nearby points tend to mean similar things, so retrieval can find relevant passages even when the wording is different.",
+    takeaway: "Semantic search looks for shared meaning—not just matching keywords.",
+    visual: "meaning-map",
+  },
+  {
+    kicker: "04 · RERANK + PROMPT",
+    title: "Let evidence earn its seat.",
+    body: "Retrieval finds candidates. Reranking puts the strongest ones first. Then the prompt packs those passages beside the question, giving the answer model a focused open-book test.",
+    takeaway: "More context is not automatically better. Irrelevant text can make a confident model confidently wander off.",
+    visual: "evidence",
+  },
+  {
+    kicker: "05 · ANSWER + COMPARE",
+    title: "Answer—and show the receipts.",
+    body: "The model writes from the supplied evidence and cites the chunks it used. A/B comparison then shows how different settings changed what was retrieved, packed, and answered.",
+    takeaway: "A good RAG answer should lead you back to the exact source, not ask for blind trust.",
+    visual: "receipts",
+  },
+];
+
 type StepGuideEntry = {
   what: string;
   why: string;
@@ -446,9 +493,7 @@ export function RagStudio() {
 
           {activeStep === "overview" ? (
             <OverviewPage
-              document={document}
               onStep={setActiveStep}
-              onStart={() => setActiveStep(document && document.id !== SAMPLE_DOCUMENT.id ? "parse" : "upload")}
             />
           ) : <>
             <div className="content-header">
@@ -613,29 +658,34 @@ export function RagStudio() {
   );
 }
 
-function OverviewPage({ document, onStep, onStart }: { document: ParsedDocument | null; onStep: (step: StepKey) => void; onStart: () => void }) {
-  const ownDocument = Boolean(document && document.id !== SAMPLE_DOCUMENT.id);
+function OverviewPage({ onStep }: { onStep: (step: StepKey) => void }) {
+  const [conceptIndex, setConceptIndex] = useState(0);
+  const concept = RAG_CONCEPTS[conceptIndex];
   const mainSteps = STEPS.filter((step) => step.key !== "compare");
   const compareStep = STEPS.find((step) => step.key === "compare")!;
+  const showPrevious = () => setConceptIndex((current) => (current - 1 + RAG_CONCEPTS.length) % RAG_CONCEPTS.length);
+  const showNext = () => setConceptIndex((current) => (current + 1) % RAG_CONCEPTS.length);
 
   return <section className="overview-page">
-    <div className="overview-hero">
-      <div className="overview-copy">
-        <p className="eyebrow">A VISUAL LAB FOR RETRIEVAL-AUGMENTED GENERATION</p>
-        <h1>RAG, with the lights on.</h1>
-        <p className="overview-lede">Upload a document, then follow its journey from raw file to cited answer. Every node below opens a real working step—so you can change the machinery and see what moves.</p>
-        <div className="overview-actions">
-          <button type="button" className="overview-primary" onClick={onStart}>{ownDocument ? "Continue your pipeline" : "Start with a document"}<span>→</span></button>
-          {!ownDocument && document && <button type="button" className="overview-secondary" onClick={() => onStep("parse")}>Explore the sample <span>↗</span></button>}
+    <section className={`concept-deck concept-${concept.visual}`} aria-label="RAG concept cards">
+      <div className="concept-stage" key={conceptIndex}>
+        <div className="concept-copy">
+          <div className="concept-progress"><span>RAG IN SIX CARDS</span><b>{String(conceptIndex + 1).padStart(2, "0")} / {String(RAG_CONCEPTS.length).padStart(2, "0")}</b></div>
+          <p className="concept-kicker">{concept.kicker}</p>
+          <h1>{concept.title}</h1>
+          <p className="concept-body">{concept.body}</p>
+          <div className="concept-takeaway"><span>KEEP THIS</span><strong>{concept.takeaway}</strong></div>
         </div>
+        <ConceptVisual kind={concept.visual} />
       </div>
-      <div className="overview-principle" aria-label="RAG in one sentence">
-        <div className="principle-orbit"><i /><i /><i /></div>
-        <span>THE BIG IDEA</span>
-        <strong>Find evidence first.<br />Write the answer second.</strong>
-        <p>That one ordering is what keeps RAG useful—and inspectable.</p>
+      <div className="concept-controls">
+        <button type="button" className="concept-arrow" onClick={showPrevious} aria-label="Previous concept card">←</button>
+        <div className="concept-tabs" role="tablist" aria-label="Choose a RAG concept card">
+          {RAG_CONCEPTS.map((card, index) => <button type="button" role="tab" aria-selected={index === conceptIndex} aria-label={`Card ${index + 1}: ${card.title}`} className={index === conceptIndex ? "active" : ""} onClick={() => setConceptIndex(index)} key={card.title}><span>{String(index + 1).padStart(2, "0")}</span><i /></button>)}
+        </div>
+        <button type="button" className="concept-next" onClick={showNext}>{conceptIndex === RAG_CONCEPTS.length - 1 ? "Start again" : "Next card"}<span>→</span></button>
       </div>
-    </div>
+    </section>
 
     <div className="flow-lab">
       <div className="flow-lab-head">
@@ -666,6 +716,45 @@ function OverviewPage({ document, onStep, onStart }: { document: ParsedDocument 
       </div>
     </div>
   </section>;
+}
+
+function ConceptVisual({ kind }: { kind: ConceptVisualKind }) {
+  if (kind === "blind-spot") return <div className="concept-visual" aria-label="A language model separated from private documents">
+    <div className="visual-halo"><span>LLM</span><i /><i /><i /></div>
+    <div className="visual-gap"><span>CAN’T SEE</span><b>···</b></div>
+    <div className="visual-doc-stack"><span>YOUR DOCS</span><i /><i /><i /></div>
+  </div>;
+
+  if (kind === "readable") return <div className="concept-visual" aria-label="A raw document becoming clean readable text">
+    <div className="raw-file"><span>PDF</span><b>RAW FILE</b><i /><i /><i /></div>
+    <div className="visual-transfer"><span>PARSE</span><b>→</b></div>
+    <div className="parsed-file"><span>READABLE TEXT</span><b>Heading</b><i /><i /><i /><small>PAGE 01</small></div>
+  </div>;
+
+  if (kind === "chunks") return <div className="concept-visual chunk-visual" aria-label="A document divided into overlapping chunks">
+    <div className="chunk-source"><span>ONE LONG DOCUMENT</span><i /><i /><i /><i /><i /><i /></div>
+    <div className="chunk-cut">{"//"}</div>
+    <div className="chunk-stack"><article><span>CHUNK 01</span><i /><i /></article><article><span>CHUNK 02</span><i /><i /></article><article><span>CHUNK 03</span><i /><i /></article></div>
+  </div>;
+
+  if (kind === "meaning-map") return <div className="concept-visual map-visual" aria-label="A question finding nearby meaning on an embedding map">
+    <div className="map-grid" />
+    <div className="query-point"><span>YOUR QUESTION</span><i /></div>
+    <i className="map-point p1" /><i className="map-point p2" /><i className="map-point p3" /><i className="map-point p4" /><i className="map-point p5" />
+    <div className="match-ring"><span>CLOSE IN MEANING</span></div>
+  </div>;
+
+  if (kind === "evidence") return <div className="concept-visual evidence-visual" aria-label="Evidence being ranked and packed into a prompt">
+    <div className="candidate-stack"><span>CANDIDATES</span><article><b>86%</b><i /></article><article><b>74%</b><i /></article><article><b>31%</b><i /></article></div>
+    <div className="visual-transfer"><span>RERANK</span><b>→</b></div>
+    <div className="prompt-pack"><span>FINAL PROMPT</span><article><small>QUESTION</small><i /></article><article><small>BEST EVIDENCE</small><i /><i /></article></div>
+  </div>;
+
+  return <div className="concept-visual receipt-visual" aria-label="A grounded answer connected to cited source chunks">
+    <div className="answer-sheet"><span>GROUNDED ANSWER</span><i /><i /><i /><div><b>[1]</b><b>[2]</b></div></div>
+    <div className="receipt-lines"><i /><i /></div>
+    <div className="source-receipts"><article><span>[1]</span><b>Chunk 04</b><small>Page 7</small></article><article><span>[2]</span><b>Chunk 09</b><small>Page 12</small></article></div>
+  </div>;
 }
 
 function StepGuide({ step, mode }: { step: Exclude<StepKey, "overview">; mode: "Basic" | "Advanced" }) {

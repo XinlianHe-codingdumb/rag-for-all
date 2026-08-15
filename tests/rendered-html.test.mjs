@@ -22,10 +22,12 @@ test("server-renders the RAG FOR ALL workspace", async () => {
   const html = await response.text();
   assert.match(html, /<title>RAG FOR ALL/);
   assert.match(html, /See what your RAG is thinking/);
-  assert.match(html, /RAG, with the lights on/);
+  assert.match(html, /RAG IN SIX CARDS/);
+  assert.match(html, /The model has a blind spot/);
+  assert.match(html, /Next card/);
   assert.match(html, /THE COMPLETE RAG JOURNEY/);
   assert.match(html, /Click any step to look inside/);
-  assert.match(html, /Start with a document/);
+  assert.doesNotMatch(html, /Start with a document/);
   assert.match(html, /Open Document step/);
   assert.match(html, /THE LEARNING LOOP/);
   assert.match(html, /two pipelines/);
