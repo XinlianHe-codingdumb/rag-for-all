@@ -1,4 +1,4 @@
-import { ensureStorageSchema, getRuntimeBindings } from "../../db/runtime";
+import { ensureStorageSchema, getLaunchPolicy, getRuntimeBindings } from "../../db/runtime";
 
 type RateLimitOptions = {
   bucket: string;
@@ -18,6 +18,14 @@ export type ApiContext = {
     remaining: number;
     resetAt: number;
   };
+};
+
+export type ModelUsageReservation = {
+  day: string;
+  estimatedTokens: number;
+  userRecordId: string;
+  siteRecordId: string;
+  feature: string;
 };
 
 export async function beginApiRequest(
@@ -126,6 +134,84 @@ export function apiError(context: ApiContext, error: unknown, message: string, c
     { status },
     { errorType: error instanceof Error ? error.name : "UnknownError" },
   );
+}
+
+export async function reserveModelUsage(
+  context: ApiContext,
+  estimatedTokens: number,
+  feature: string,
+): Promise<ModelUsageReservation | Response> {
+  const safeEstimate = Math.max(1, Math.ceil(estimatedTokens));
+  const day = new Date().toISOString().slice(0, 10);
+  const policy = getLaunchPolicy();
+  const userRecordId = `user:${context.userId}:${day}`;
+  const siteRecordId = `site:${day}`;
+  try {
+    const { DB } = getRuntimeBindings();
+    if (!DB) throw new Error("D1 is unavailable for model budget enforcement.");
+    await ensureStorageSchema(DB);
+    const userReserved = await reserveUsageScope(DB, userRecordId, "user", context.userId, day, safeEstimate, policy.userDailyTokenBudget);
+    if (!userReserved) {
+      return apiJson(context, { error: "Your daily AI usage limit has been reached. Try again tomorrow.", code: "DAILY_USER_BUDGET_REACHED", requestId: context.requestId }, { status: 429 }, { event: "usage.user_budget_reached", feature });
+    }
+    const siteReserved = await reserveUsageScope(DB, siteRecordId, "site", null, day, safeEstimate, policy.siteDailyTokenBudget);
+    if (!siteReserved) {
+      await releaseUsageReservation(DB, userRecordId, safeEstimate);
+      return apiJson(context, { error: "The private beta has reached today’s shared AI budget. Try again tomorrow.", code: "DAILY_SITE_BUDGET_REACHED", requestId: context.requestId }, { status: 429 }, { event: "usage.site_budget_reached", feature });
+    }
+    if (userReserved === safeEstimate) {
+      const expiry = new Date(Date.now() - 14 * 24 * 60 * 60 * 1_000).toISOString().slice(0, 10);
+      await DB.prepare("DELETE FROM model_usage_daily WHERE day < ?").bind(expiry).run();
+    }
+    return { day, estimatedTokens: safeEstimate, userRecordId, siteRecordId, feature };
+  } catch (error) {
+    return apiError(context, error, "AI usage protection is temporarily unavailable.", "MODEL_BUDGET_UNAVAILABLE");
+  }
+}
+
+export async function recordModelUsage(context: ApiContext, reservation: ModelUsageReservation, actualTokens: number) {
+  const safeActual = Math.max(0, Math.ceil(actualTokens));
+  try {
+    const { DB } = getRuntimeBindings();
+    if (!DB) throw new Error("D1 is unavailable for model usage recording.");
+    await DB.batch([
+      finalizeUsageReservation(DB, reservation.userRecordId, reservation.estimatedTokens, safeActual),
+      finalizeUsageReservation(DB, reservation.siteRecordId, reservation.estimatedTokens, safeActual),
+    ]);
+  } catch (error) {
+    logEvent({ requestId: context.requestId, route: context.route, method: context.method, actor: context.actorHash, event: "usage.record_failed", feature: reservation.feature, errorType: error instanceof Error ? error.name : "UnknownError" });
+  }
+}
+
+async function reserveUsageScope(database: D1Database, id: string, scope: string, ownerId: string | null, day: string, tokens: number, limit: number) {
+  if (tokens > limit) return 0;
+  const row = await database.prepare(`INSERT INTO model_usage_daily
+    (id, scope, owner_id, day, reserved_tokens, actual_tokens, request_count, updated_at)
+    VALUES (?, ?, ?, ?, ?, 0, 1, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      reserved_tokens = reserved_tokens + excluded.reserved_tokens,
+      request_count = request_count + 1,
+      updated_at = excluded.updated_at
+    WHERE model_usage_daily.reserved_tokens + excluded.reserved_tokens <= ?
+    RETURNING reserved_tokens`)
+    .bind(id, scope, ownerId, day, tokens, Date.now(), limit)
+    .first<{ reserved_tokens: number }>();
+  return Number(row?.reserved_tokens ?? 0);
+}
+
+function finalizeUsageReservation(database: D1Database, id: string, estimatedTokens: number, actualTokens: number) {
+  return database.prepare(`UPDATE model_usage_daily SET
+    reserved_tokens = MAX(0, reserved_tokens - ? + ?),
+    actual_tokens = actual_tokens + ?,
+    updated_at = ?
+    WHERE id = ?`)
+    .bind(estimatedTokens, actualTokens, actualTokens, Date.now(), id);
+}
+
+async function releaseUsageReservation(database: D1Database, id: string, estimatedTokens: number) {
+  await database.prepare("UPDATE model_usage_daily SET reserved_tokens = MAX(0, reserved_tokens - ?), updated_at = ? WHERE id = ?")
+    .bind(estimatedTokens, Date.now(), id)
+    .run();
 }
 
 function requestIdentity(request: Request) {

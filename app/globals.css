@@ -60,6 +60,32 @@ button { color: inherit; }
 }
 .app-shell .topbar-title strong { color: inherit; font-size: inherit; font-weight: 820; letter-spacing: -.025em; }
 .app-shell .topbar-title span { color: inherit; font-size: inherit; font-weight: 680; }
+.topbar-links { position: absolute; right: 28px; display: flex; gap: 15px; }
+.topbar-links a { color: #747b85; font-size: 11px; font-weight: 650; text-decoration: none; }
+.topbar-links a:hover { color: var(--blue); }
+
+.legal-shell { min-height: 100vh; background: linear-gradient(180deg,#f8faff 0,#fff 420px); }
+.legal-header { height: 72px; display: flex; align-items: center; justify-content: space-between; padding: 0 max(24px,calc((100vw - 980px) / 2)); border-bottom: 1px solid var(--line); background: rgba(255,255,255,.86); backdrop-filter: blur(18px); }
+.legal-header > a { color: var(--ink); font-size: 15px; font-weight: 820; letter-spacing: -.02em; text-decoration: none; }
+.legal-header nav { display: flex; gap: 17px; }
+.legal-header nav a { color: #6f7782; font-size: 12px; font-weight: 620; text-decoration: none; }
+.legal-header a:hover { color: var(--blue); }
+.legal-document { width: min(980px,calc(100% - 36px)); margin: 0 auto; padding: 72px 0 50px; }
+.legal-intro { max-width: 790px; padding-bottom: 48px; border-bottom: 1px solid #dfe5ee; }
+.legal-intro > p { margin: 0; color: var(--blue); font: 740 11px var(--font-geist-mono); letter-spacing: .12em; }
+.legal-intro h1 { margin: 18px 0; color: var(--ink); font-size: clamp(38px,5vw,66px); line-height: 1.02; letter-spacing: -.055em; }
+.legal-intro > strong { display: block; max-width: 720px; color: #56606e; font-size: 16px; font-weight: 520; line-height: 1.65; }
+.legal-intro > small { display: block; margin-top: 20px; color: #8b929d; font-size: 11px; }
+.legal-sections { max-width: 790px; }
+.legal-sections section { padding: 35px 0; border-bottom: 1px solid #e7eaf0; }
+.legal-sections h2 { margin: 0 0 15px; color: #252a31; font-size: 22px; letter-spacing: -.025em; }
+.legal-sections p,.legal-sections li { color: #5c6572; font-size: 14px; line-height: 1.72; }
+.legal-sections p { margin: 10px 0 0; }
+.legal-sections ul { margin: 0; padding-left: 20px; }
+.legal-sections li + li { margin-top: 8px; }
+.legal-document > footer { display: flex; justify-content: space-between; gap: 18px; padding-top: 30px; }
+.legal-document > footer a,.legal-document > footer span { color: #78818e; font-size: 11px; text-decoration: none; }
+.legal-document > footer a:hover { color: var(--blue); }
 
 .workspace { display: grid; grid-template-columns: 254px minmax(0, 1fr); min-height: calc(100vh - var(--topbar-height)); }
 .sidebar { background: var(--sidebar); border-right: 1px solid var(--line); padding: 20px 14px; display: flex; flex-direction: column; }
@@ -539,6 +565,9 @@ select { width: 100%; border: 1px solid var(--line); border-radius: 9px; padding
 @media (max-width: 680px) {
   :root { --topbar-height: 72px; --type-large: 34px; --type-medium: 18px; }
   .topbar { padding: 0 15px; }
+  .topbar { justify-content: flex-start; }
+  .app-shell .topbar-title span { display: none; }
+  .topbar-links { right: 15px; }
   .app-shell .topbar-title,.app-shell .topbar-title strong,.app-shell .topbar-title span { font-size: var(--type-small); }
   .workspace { display: block; }
   .sidebar { position: sticky; top: var(--topbar-height); z-index: 10; padding: 7px; border-right: 0; border-bottom: 1px solid var(--line); overflow-x: auto; display: block; }
@@ -558,6 +587,9 @@ select { width: 100%; border: 1px solid var(--line); border-radius: 9px; padding
   .rerank-board > header,.rerank-board > footer { flex-direction: column; }
   .prompt-stats { grid-template-columns: 1fr; gap: 0; }
   .answer-card { padding: 24px; }
+  .legal-document { padding-top: 45px; }
+  .legal-intro h1 { font-size: 39px; }
+  .legal-document > footer { flex-direction: column; }
   .result-card { grid-template-columns: 30px minmax(0,1fr); }
   .score { grid-column: 2; text-align: left; flex-direction: row; gap: 5px; align-items: baseline; }
   .overview-page { padding-top: 4px; }

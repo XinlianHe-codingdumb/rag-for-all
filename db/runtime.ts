@@ -6,6 +6,9 @@ type RuntimeBindings = {
   OPENAI_API_KEY?: string;
   OPENAI_EMBEDDING_MODEL?: string;
   OPENAI_RESPONSE_MODEL?: string;
+  DATA_RETENTION_DAYS?: string;
+  MODEL_DAILY_USER_TOKEN_BUDGET?: string;
+  MODEL_DAILY_SITE_TOKEN_BUDGET?: string;
 };
 
 export function getRuntimeBindings() {
@@ -51,6 +54,16 @@ export async function ensureStorageSchema(database: D1Database) {
       window_start INTEGER NOT NULL,
       count INTEGER NOT NULL
     )`),
+    database.prepare(`CREATE TABLE IF NOT EXISTS model_usage_daily (
+      id TEXT PRIMARY KEY NOT NULL,
+      scope TEXT NOT NULL,
+      owner_id TEXT,
+      day TEXT NOT NULL,
+      reserved_tokens INTEGER NOT NULL,
+      actual_tokens INTEGER NOT NULL,
+      request_count INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`),
   ]);
   await ensureColumn(database, "documents", "owner_id", "owner_id TEXT");
   await ensureColumn(database, "pipeline_runs", "owner_id", "owner_id TEXT");
@@ -62,6 +75,8 @@ export async function ensureStorageSchema(database: D1Database) {
     database.prepare("CREATE INDEX IF NOT EXISTS idx_pipeline_runs_owner_created_at ON pipeline_runs(owner_id, created_at)"),
     database.prepare("CREATE INDEX IF NOT EXISTS idx_api_rate_limits_owner_bucket ON api_rate_limits(owner_id, bucket)"),
     database.prepare("CREATE INDEX IF NOT EXISTS idx_api_rate_limits_window_start ON api_rate_limits(window_start)"),
+    database.prepare("CREATE INDEX IF NOT EXISTS idx_model_usage_daily_day ON model_usage_daily(day)"),
+    database.prepare("CREATE INDEX IF NOT EXISTS idx_model_usage_daily_owner_day ON model_usage_daily(owner_id, day)"),
   ]);
 }
 
@@ -82,4 +97,19 @@ export function getOpenAIConfig() {
     responseModel:
       bindings.OPENAI_RESPONSE_MODEL || processEnvironment.OPENAI_RESPONSE_MODEL || "gpt-5.6-luna",
   };
+}
+
+export function getLaunchPolicy() {
+  const bindings = getRuntimeBindings();
+  const processEnvironment = typeof process !== "undefined" ? process.env : {};
+  return {
+    retentionDays: positiveInteger(bindings.DATA_RETENTION_DAYS || processEnvironment.DATA_RETENTION_DAYS, 7),
+    userDailyTokenBudget: positiveInteger(bindings.MODEL_DAILY_USER_TOKEN_BUDGET || processEnvironment.MODEL_DAILY_USER_TOKEN_BUDGET, 1_000_000),
+    siteDailyTokenBudget: positiveInteger(bindings.MODEL_DAILY_SITE_TOKEN_BUDGET || processEnvironment.MODEL_DAILY_SITE_TOKEN_BUDGET, 5_000_000),
+  };
+}
+
+function positiveInteger(value: string | undefined, fallback: number) {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
 }

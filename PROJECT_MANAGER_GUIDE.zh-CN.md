@@ -85,7 +85,7 @@ git diff          # 看具体改了什么
 
 ### 2026-08 私测基础进度
 
-目前已经完成第一轮私有 Beta 加固：Sites 登录身份会在服务端校验；文档与实验记录按用户隔离；上传、Embedding、Rerank、回答和历史记录接口有 D1 限流；接口带 request ID；日志只记录运行元数据，不记录文档正文、完整问题、邮箱或 API key；数据库变化已有 Drizzle migration；Worker 已添加基础安全响应头。
+目前已经完成两轮私有 Beta 加固：Sites 登录身份会在服务端校验；文档与实验记录按用户隔离；上传、Embedding、Rerank、回答和历史记录接口有 D1 限流；接口带 request ID；日志只记录运行元数据，不记录文档正文、完整问题、邮箱或 API key；数据库变化已有 Drizzle migration；Worker 已添加基础安全响应头。现在也已有 Privacy/Terms 页面、7 天文档保留规则，以及调用模型前生效的用户级和全站每日 Token 上限。
 
 这意味着项目适合继续保持 **private**，邀请少量指定测试者使用；还不代表可以直接匿名公开。公开前仍需要隐私政策、保留/自动删除规则、监控告警、成本硬上限、端到端测试和正式的公开登录方案。具体状态以 `docs/LAUNCH_READINESS.md` 为准。
 

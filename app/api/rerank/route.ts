@@ -1,5 +1,5 @@
 import { getOpenAIConfig } from "../../../db/runtime";
-import { apiError, apiJson, beginApiRequest } from "../../lib/api-guard";
+import { apiError, apiJson, beginApiRequest, recordModelUsage, reserveModelUsage } from "../../lib/api-guard";
 
 type Candidate = { id: number; text: string };
 
@@ -29,6 +29,8 @@ export async function POST(request: Request) {
 
   const startedAt = Date.now();
   const candidateText = candidates.map((item) => `CHUNK ${item.id}\n${item.text}`).join("\n\n---\n\n");
+    const usageReservation = await reserveModelUsage(authorization, Math.ceil((question.length + candidateText.length) / 4) + 1_200, "rerank");
+    if (usageReservation instanceof Response) return usageReservation;
     const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
@@ -45,6 +47,7 @@ export async function POST(request: Request) {
     output_text?: string;
     output?: Array<{ content?: Array<{ type?: string; text?: string }> }>;
     model?: string;
+    usage?: { input_tokens?: number; output_tokens?: number };
     error?: { message?: string };
   };
     if (!response.ok) return apiJson(authorization, { error: body.error?.message || "Reranking failed." }, { status: response.status || 502 }, { provider: "openai" });
@@ -59,11 +62,14 @@ export async function POST(request: Request) {
       .map((item) => ({ id: Number(item.id), score: Math.max(0, Math.min(1, Number(item.score) / 100)), reason: String(item.reason ?? "Relevant to the complete question.").slice(0, 220) }))
       .filter((item) => allowed.has(item.id) && Number.isFinite(item.score));
     if (signals.length !== candidates.length) throw new Error("The reranker returned an incomplete candidate list.");
+    const inputTokens = body.usage?.input_tokens ?? 0;
+    const outputTokens = body.usage?.output_tokens ?? 0;
+    await recordModelUsage(authorization, usageReservation, inputTokens + outputTokens);
     return apiJson(
       authorization,
       { signals, model: body.model || config.responseModel, durationMs: Date.now() - startedAt },
       {},
-      { provider: "openai", model: body.model || config.responseModel, candidateCount: candidates.length },
+      { provider: "openai", model: body.model || config.responseModel, candidateCount: candidates.length, inputTokens, outputTokens },
     );
   } catch (error) {
     return apiError(authorization, error, "Reranking failed.", "RERANK_FAILED", 502);

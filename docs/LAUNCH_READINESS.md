@@ -13,6 +13,9 @@ This repository is being hardened for a private beta before any public launch.
 - Structured logs contain request metadata, timings, model/token usage, and opaque actor hashes—not document bodies, prompts, email addresses, or API keys.
 - File uploads have server-side byte, MIME, parsed-character, and page-count limits.
 - Baseline browser security headers are applied by the Worker.
+- Plain-English Privacy and Terms pages explain storage, model processing, deletion, and beta limitations.
+- Saved documents are eligible for automatic deletion after seven days; failed object deletions remain eligible for retry on later maintenance runs.
+- Per-user and site-wide daily token budgets are enforced before paid model calls and reconciled with returned provider usage.
 
 ## Before inviting beta users
 
@@ -20,7 +23,7 @@ This repository is being hardened for a private beta before any public launch.
 - Confirm the Sites access policy includes only intended testers.
 - Configure the production OpenAI secret and verify `/api/status` reports persistence and usage protection.
 - Enable and review Cloudflare Worker logs; add alerting for 5xx rate, latency, and model cost.
-- Publish a privacy notice explaining R2/D1 storage, OpenAI processing, retention, and deletion.
+- Replace the private-beta invitation contact with a dedicated public privacy contact before public access.
 - Run the storage smoke test against staging with authenticated-user headers.
 
 ## Before a public beta
@@ -29,6 +32,7 @@ This repository is being hardened for a private beta before any public launch.
 - Add explicit projects and membership tables before team sharing.
 - Replace first-owner legacy claiming with a completed, audited backfill migration.
 - Add automated retention cleanup and deletion retry/audit records.
+- Obtain a jurisdiction-appropriate legal review; the current pages are transparent beta notices, not a claim of full regulatory compliance.
 - Add end-to-end upload-to-delete tests, load tests, and provider-failure tests.
 - Add a durable vector index when multi-document or repeated-query usage justifies it.
 - Add staging, backups, recovery drills, a custom domain, and a rollback runbook.

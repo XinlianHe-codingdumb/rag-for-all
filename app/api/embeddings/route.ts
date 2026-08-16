@@ -1,5 +1,5 @@
 import { getOpenAIConfig } from "../../../db/runtime";
-import { apiError, apiJson, beginApiRequest } from "../../lib/api-guard";
+import { apiError, apiJson, beginApiRequest, recordModelUsage, reserveModelUsage } from "../../lib/api-guard";
 
 const MAX_TEXTS = 100;
 const MAX_CHARACTERS_PER_TEXT = 30_000;
@@ -25,6 +25,8 @@ export async function POST(request: Request) {
     if (texts.some((text) => !text.trim() || text.length > MAX_CHARACTERS_PER_TEXT)) {
       return apiJson(authorization, { error: `Each text must contain 1-${MAX_CHARACTERS_PER_TEXT} characters.` }, { status: 400 });
     }
+    const usageReservation = await reserveModelUsage(authorization, Math.ceil(texts.reduce((total, text) => total + text.length, 0) / 4), "embeddings");
+    if (usageReservation instanceof Response) return usageReservation;
 
     const response = await fetch("https://api.openai.com/v1/embeddings", {
     method: "POST",
@@ -45,6 +47,7 @@ export async function POST(request: Request) {
     }
     const vectors = [...body.data].sort((a, b) => a.index - b.index).map((item) => item.embedding);
     const inputTokens = body.usage?.total_tokens ?? 0;
+    await recordModelUsage(authorization, usageReservation, inputTokens);
     return apiJson(
       authorization,
       { vectors, model: body.model || config.embeddingModel, inputTokens },

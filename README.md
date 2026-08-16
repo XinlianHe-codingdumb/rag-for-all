@@ -70,6 +70,7 @@ The test suite builds the app, checks its server-rendered shell, parses real PDF
 - [Technical architecture](docs/ARCHITECTURE.md)
 - [Chinese project management guide](PROJECT_MANAGER_GUIDE.zh-CN.md)
 - [Private-beta launch checklist](docs/LAUNCH_READINESS.md)
+- [Private-beta operations runbook](docs/BETA_OPERATIONS.md)
 
 ## Git learning path
 

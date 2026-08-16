@@ -32,6 +32,7 @@ type ApiStatus = {
   embeddingModel: string;
   responseModel: string;
   persistenceConfigured: boolean;
+  retentionDays?: number;
 };
 
 const STEPS: Array<{ key: Exclude<StepKey, "overview">; number: string; title: string; note: string; icon: string }> = [
@@ -483,6 +484,7 @@ export function RagStudio() {
     <main className="app-shell">
       <header className="topbar">
         <p className="topbar-title"><strong>RAG FOR ALL</strong><span> — See How RAG Works, Step by Step.</span></p>
+        <nav className="topbar-links" aria-label="Legal information"><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>
       </header>
 
       <div className="workspace">
@@ -557,7 +559,7 @@ export function RagStudio() {
                 </div>
                 <div className="privacy-card">
                   <span>Privacy by default</span>
-                  <p>Parsing starts in your browser. When storage is available, originals and parsed text are stored together and share one deletion path.</p>
+                  <p>Parsing starts in your browser. Saved originals and parsed text share one deletion path and are automatically removed after {apiStatus?.retentionDays ?? 7} days.</p>
                   <strong className="storage-state">{document?.persisted ? "Saved privately" : "Browser session only"}</strong>
                   {document && <button className="delete-document-button" type="button" onClick={() => setDeleteDialogOpen(true)}><span aria-hidden="true">×</span><strong>Delete document</strong><small>Remove the file, parsed text, and experiment history</small></button>}
                   {!document && <button className="restore-sample-button" type="button" onClick={restoreSample}>Restore sample handbook</button>}

@@ -2,13 +2,13 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-async function render() {
+async function render(path = "/") {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
   const { default: worker } = await import(workerUrl.href);
 
   return worker.fetch(
-    new Request("http://localhost/", { headers: { accept: "text/html" } }),
+    new Request(`http://localhost${path}`, { headers: { accept: "text/html" } }),
     { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
     { waitUntil() {}, passThroughOnException() {} },
   );
@@ -60,6 +60,20 @@ test("server-renders the RAG FOR ALL workspace", async () => {
   assert.match(html, /Northstar Handbook/);
   assert.doesNotMatch(html, /codex-preview/);
   assert.doesNotMatch(html, /react-loading-skeleton/);
+});
+
+test("renders route-specific legal metadata without the homepage social image", async () => {
+  for (const [path, title, description] of [
+    ["/privacy", "Privacy — RAG FOR ALL", "How the RAG FOR ALL private beta handles documents"],
+    ["/terms", "Terms — RAG FOR ALL", "Private-beta terms for using RAG FOR ALL"],
+  ]) {
+    const response = await render(path);
+    assert.equal(response.status, 200);
+    const html = await response.text();
+    assert.match(html, new RegExp(`<title>${title}`));
+    assert.match(html, new RegExp(description));
+    assert.doesNotMatch(html, /og\.png/);
+  }
 });
 
 test("keeps API credentials out of client source", async () => {

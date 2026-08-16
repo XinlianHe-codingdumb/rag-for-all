@@ -53,3 +53,21 @@ export const apiRateLimits = sqliteTable(
     index("idx_api_rate_limits_window_start").on(table.windowStart),
   ],
 );
+
+export const modelUsageDaily = sqliteTable(
+  "model_usage_daily",
+  {
+    id: text("id").primaryKey(),
+    scope: text("scope").notNull(),
+    ownerId: text("owner_id"),
+    day: text("day").notNull(),
+    reservedTokens: integer("reserved_tokens").notNull(),
+    actualTokens: integer("actual_tokens").notNull(),
+    requestCount: integer("request_count").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    index("idx_model_usage_daily_day").on(table.day),
+    index("idx_model_usage_daily_owner_day").on(table.ownerId, table.day),
+  ],
+);

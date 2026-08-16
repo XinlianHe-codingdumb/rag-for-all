@@ -30,6 +30,25 @@ test("keeps operational logs metadata-only and adds usage protection", async () 
   assert.match(guard, /service: "rag-for-all"/);
   assert.doesNotMatch(guard, /documentText|promptText|apiKey/);
   assert.match(schema, /apiRateLimits/);
+  assert.match(schema, /modelUsageDaily/);
+  assert.match(guard, /reserveModelUsage/);
+  assert.match(guard, /DAILY_USER_BUDGET_REACHED/);
+  assert.match(guard, /DAILY_SITE_BUDGET_REACHED/);
   assert.match(worker, /X-Content-Type-Options/);
   assert.match(worker, /Permissions-Policy/);
+});
+
+test("publishes beta privacy, retention, and terms in plain English", async () => {
+  const [privacy, terms, documents, studio] = await Promise.all([
+    read("../app/privacy/page.tsx"),
+    read("../app/terms/page.tsx"),
+    read("../app/api/documents/route.ts"),
+    read("../app/rag-studio.tsx"),
+  ]);
+  assert.match(privacy, /automatic deletion seven days after upload/i);
+  assert.match(privacy, /sent to the configured OpenAI API/i);
+  assert.match(terms, /Upload only files you have the right to use/i);
+  assert.match(documents, /cleanupExpiredDocuments/);
+  assert.match(studio, /href="\/privacy"/);
+  assert.match(studio, /href="\/terms"/);
 });

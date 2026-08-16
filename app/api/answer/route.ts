@@ -1,5 +1,5 @@
 import { getOpenAIConfig } from "../../../db/runtime";
-import { apiError, apiJson, beginApiRequest } from "../../lib/api-guard";
+import { apiError, apiJson, beginApiRequest, recordModelUsage, reserveModelUsage } from "../../lib/api-guard";
 
 export async function POST(request: Request) {
   const authorization = await beginApiRequest(request, "model.answer", { bucket: "answer_generation", limit: 60 });
@@ -22,6 +22,8 @@ export async function POST(request: Request) {
     if (question.length > 4_000 || context.length > 120_000) {
       return apiJson(authorization, { error: "The question or retrieved context exceeds the current safety limit." }, { status: 400 });
     }
+    const usageReservation = await reserveModelUsage(authorization, Math.ceil((question.length + context.length) / 4) + 700, "answer");
+    if (usageReservation instanceof Response) return usageReservation;
 
     const startedAt = Date.now();
     const response = await fetch("https://api.openai.com/v1/responses", {
@@ -56,6 +58,7 @@ export async function POST(request: Request) {
       .join("\n") || "";
     const inputTokens = body.usage?.input_tokens ?? 0;
     const outputTokens = body.usage?.output_tokens ?? 0;
+    await recordModelUsage(authorization, usageReservation, inputTokens + outputTokens);
     return apiJson(authorization, {
       text,
       model: body.model || config.responseModel,

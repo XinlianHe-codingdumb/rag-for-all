@@ -1,4 +1,4 @@
-import { ensureStorageSchema, requireStorageBindings } from "../../../db/runtime";
+import { ensureStorageSchema, getLaunchPolicy, requireStorageBindings } from "../../../db/runtime";
 import { apiError, apiJson, beginApiRequest, type ApiContext } from "../../lib/api-guard";
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
@@ -16,13 +16,14 @@ export async function GET(request: Request) {
   const authorization = await beginApiRequest(request, "documents.list");
   if (authorization instanceof Response) return authorization;
   try {
-    const { DB } = requireStorageBindings();
+    const { DB, DOCUMENTS } = requireStorageBindings();
     await ensureStorageSchema(DB);
+    const expiredRemoved = await cleanupExpiredDocuments(DB, DOCUMENTS);
     await claimLegacyDocuments(DB, authorization.userId);
     const rows = await DB.prepare(`SELECT id, name, mime_type AS mimeType, size, page_count AS pageCount,
       character_count AS characterCount, created_at AS createdAt FROM documents
       WHERE owner_id = ? ORDER BY created_at DESC LIMIT 30`).bind(authorization.userId).all();
-    return apiJson(authorization, { documents: rows.results ?? [] });
+    return apiJson(authorization, { documents: rows.results ?? [] }, {}, { expiredRemoved });
   } catch (error) {
     return storageError(authorization, error);
   }
@@ -34,6 +35,7 @@ export async function POST(request: Request) {
   try {
     const { DB, DOCUMENTS } = requireStorageBindings();
     await ensureStorageSchema(DB);
+    const expiredRemoved = await cleanupExpiredDocuments(DB, DOCUMENTS);
     const form = await request.formData();
     const file = form.get("file");
     const parsed = form.get("parsed");
@@ -70,7 +72,7 @@ export async function POST(request: Request) {
       authorization,
       { document: { id, name: file.name, size: file.size, pageCount: metadata.pages.length, characterCount: metadata.text.length, createdAt } },
       { status: 201 },
-      { fileBytes: file.size, pageCount: metadata.pages.length, characterCount: metadata.text.length },
+      { fileBytes: file.size, pageCount: metadata.pages.length, characterCount: metadata.text.length, expiredRemoved },
     );
   } catch (error) {
     return storageError(authorization, error);
@@ -102,6 +104,28 @@ export async function DELETE(request: Request) {
 
 async function claimLegacyDocuments(database: D1Database, ownerId: string) {
   await database.prepare("UPDATE documents SET owner_id = ? WHERE owner_id IS NULL").bind(ownerId).run();
+}
+
+async function cleanupExpiredDocuments(database: D1Database, bucket: R2Bucket) {
+  const cutoff = Date.now() - getLaunchPolicy().retentionDays * 24 * 60 * 60 * 1_000;
+  const expired = await database.prepare(`SELECT id, original_key AS originalKey, parsed_key AS parsedKey
+    FROM documents WHERE created_at < ? ORDER BY created_at ASC LIMIT 50`)
+    .bind(cutoff)
+    .all<{ id: string; originalKey: string; parsedKey: string }>();
+  let removed = 0;
+  for (const row of expired.results ?? []) {
+    try {
+      await Promise.all([bucket.delete(row.originalKey), bucket.delete(row.parsedKey)]);
+      await database.batch([
+        database.prepare("DELETE FROM pipeline_runs WHERE document_id = ?").bind(row.id),
+        database.prepare("DELETE FROM documents WHERE id = ?").bind(row.id),
+      ]);
+      removed += 1;
+    } catch (error) {
+      console.warn(JSON.stringify({ service: "rag-for-all", event: "retention.delete_failed", timestamp: new Date().toISOString(), errorType: error instanceof Error ? error.name : "UnknownError" }));
+    }
+  }
+  return removed;
 }
 
 function storageError(context: ApiContext, error: unknown) {
