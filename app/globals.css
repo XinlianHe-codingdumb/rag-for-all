@@ -814,7 +814,7 @@ select { width: 100%; border: 1px solid var(--line); border-radius: 9px; padding
 .dialogue-label small { color: #8a929e; font-size: 10px; }
 .app-shell .chat-bubble { position: relative; margin: 0; border-radius: 14px; padding: 10px 12px; font-size: clamp(11px,.82vw,13px); line-height: 1.42; }
 .user-chat { align-self: flex-end; max-width: 82%; border: 1px solid #c5e6d3; background: #e5f7ec; color: #245c47; }
-.user-chat::after { content: ""; position: absolute; right: 16px; bottom: -6px; width: 10px; height: 10px; border-right: 1px solid #c5e6d3; border-bottom: 1px solid #c5e6d3; background: #e5f7ec; transform: rotate(45deg); }
+.user-chat::after { content: ""; position: absolute; right: -6px; top: 50%; width: 10px; height: 10px; border-top: 1px solid #c5e6d3; border-right: 1px solid #c5e6d3; background: #e5f7ec; transform: translateY(-50%) rotate(45deg); }
 .agent-reply { min-height: 0; display: grid; grid-template-columns: 68px minmax(0,1fr); align-items: center; gap: 8px; }
 .agent-reply img { width: 68px; height: 68px; object-fit: contain; mix-blend-mode: multiply; transform: scale(1.14); }
 .follow-up-chat { margin-top: 1px !important; }
