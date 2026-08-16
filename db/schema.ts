@@ -71,3 +71,27 @@ export const modelUsageDaily = sqliteTable(
     index("idx_model_usage_daily_owner_day").on(table.ownerId, table.day),
   ],
 );
+
+export const analyticsEvents = sqliteTable(
+  "analytics_events",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id").notNull(),
+    eventName: text("event_name").notNull(),
+    section: text("section"),
+    path: text("path").notNull(),
+    propertiesJson: text("properties_json").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (table) => [
+    index("idx_analytics_events_created_at").on(table.createdAt),
+    index("idx_analytics_events_event_created_at").on(table.eventName, table.createdAt),
+    index("idx_analytics_events_session_created_at").on(table.sessionId, table.createdAt),
+  ],
+);
+
+export const siteSettings = sqliteTable("site_settings", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  updatedAt: integer("updated_at").notNull(),
+});

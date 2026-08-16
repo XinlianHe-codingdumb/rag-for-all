@@ -64,8 +64,8 @@ test("server-renders the RAG FOR ALL workspace", async () => {
 
 test("renders route-specific legal metadata without the homepage social image", async () => {
   for (const [path, title, description] of [
-    ["/privacy", "Privacy — RAG FOR ALL", "How the RAG FOR ALL private beta handles documents"],
-    ["/terms", "Terms — RAG FOR ALL", "Private-beta terms for using RAG FOR ALL"],
+    ["/privacy", "Privacy — RAG FOR ALL", "How RAG FOR ALL handles documents, anonymous product analytics"],
+    ["/terms", "Terms — RAG FOR ALL", "Public-beta terms for using RAG FOR ALL"],
   ]) {
     const response = await render(path);
     assert.equal(response.status, 200);

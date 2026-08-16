@@ -19,7 +19,6 @@ export async function GET(request: Request) {
     const { DB, DOCUMENTS } = requireStorageBindings();
     await ensureStorageSchema(DB);
     const expiredRemoved = await cleanupExpiredDocuments(DB, DOCUMENTS);
-    await claimLegacyDocuments(DB, authorization.userId);
     const rows = await DB.prepare(`SELECT id, name, mime_type AS mimeType, size, page_count AS pageCount,
       character_count AS characterCount, created_at AS createdAt FROM documents
       WHERE owner_id = ? ORDER BY created_at DESC LIMIT 30`).bind(authorization.userId).all();
@@ -88,22 +87,18 @@ export async function DELETE(request: Request) {
     const payload = await request.json() as { id?: string };
     if (!payload.id) return apiJson(authorization, { error: "id is required." }, { status: 400 });
     const row = await DB.prepare(`SELECT original_key AS originalKey, parsed_key AS parsedKey FROM documents
-      WHERE id = ? AND (owner_id = ? OR owner_id IS NULL)`)
+      WHERE id = ? AND owner_id = ?`)
       .bind(payload.id, authorization.userId).first<{ originalKey: string; parsedKey: string }>();
     if (!row) return apiJson(authorization, { error: "Document not found." }, { status: 404 });
     if (row) await Promise.all([DOCUMENTS.delete(row.originalKey), DOCUMENTS.delete(row.parsedKey)]);
     await DB.batch([
-      DB.prepare("DELETE FROM pipeline_runs WHERE document_id = ? AND (owner_id = ? OR owner_id IS NULL)").bind(payload.id, authorization.userId),
-      DB.prepare("DELETE FROM documents WHERE id = ? AND (owner_id = ? OR owner_id IS NULL)").bind(payload.id, authorization.userId),
+      DB.prepare("DELETE FROM pipeline_runs WHERE document_id = ? AND owner_id = ?").bind(payload.id, authorization.userId),
+      DB.prepare("DELETE FROM documents WHERE id = ? AND owner_id = ?").bind(payload.id, authorization.userId),
     ]);
     return apiJson(authorization, { deleted: true });
   } catch (error) {
     return storageError(authorization, error);
   }
-}
-
-async function claimLegacyDocuments(database: D1Database, ownerId: string) {
-  await database.prepare("UPDATE documents SET owner_id = ? WHERE owner_id IS NULL").bind(ownerId).run();
 }
 
 async function cleanupExpiredDocuments(database: D1Database, bucket: R2Bucket) {

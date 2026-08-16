@@ -1,4 +1,7 @@
-import { ensureStorageSchema, getLaunchPolicy, getRuntimeBindings } from "../../db/runtime";
+import { ensureStorageSchema, getEffectiveLaunchPolicy, getRuntimeBindings } from "../../db/runtime";
+
+const SESSION_COOKIE = "rfa_session";
+const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
 
 type RateLimitOptions = {
   bucket: string;
@@ -13,6 +16,9 @@ export type ApiContext = {
   startedAt: number;
   userId: string;
   actorHash: string;
+  ipHash: string;
+  identityKind: "anonymous" | "development";
+  setCookie?: string;
   rateLimit?: {
     limit: number;
     remaining: number;
@@ -36,17 +42,19 @@ export async function beginApiRequest(
   const requestId = request.headers.get("cf-ray") || request.headers.get("x-request-id") || crypto.randomUUID();
   const startedAt = Date.now();
   const identity = requestIdentity(request);
-
-  if (!identity) {
-    logEvent({ requestId, route, method: request.method, status: 401, durationMs: Date.now() - startedAt, event: "api.unauthorized" });
-    return Response.json(
-      { error: "Sign in is required.", code: "AUTH_REQUIRED", requestId },
-      { status: 401, headers: responseHeaders(requestId) },
-    );
-  }
-
   const actorHash = await shortHash(identity.userId);
-  const context: ApiContext = { requestId, route, method: request.method, startedAt, userId: identity.userId, actorHash };
+  const ipHash = await requestIpHash(request);
+  const context: ApiContext = {
+    requestId,
+    route,
+    method: request.method,
+    startedAt,
+    userId: identity.userId,
+    actorHash,
+    ipHash,
+    identityKind: identity.kind,
+    setCookie: identity.setCookie,
+  };
   if (!rateLimit) return context;
 
   try {
@@ -56,25 +64,23 @@ export async function beginApiRequest(
     const windowMs = rateLimit.windowMs ?? 60 * 60 * 1_000;
     const now = Date.now();
     const windowStart = Math.floor(now / windowMs) * windowMs;
-    const id = `${identity.userId}:${rateLimit.bucket}:${windowStart}`;
-    const row = await DB.prepare(`INSERT INTO api_rate_limits
-      (id, owner_id, bucket, window_start, count)
-      VALUES (?, ?, ?, ?, 1)
-      ON CONFLICT(id) DO UPDATE SET count = count + 1
-      RETURNING count`)
-      .bind(id, identity.userId, rateLimit.bucket, windowStart)
-      .first<{ count: number }>();
-    const count = Number(row?.count ?? rateLimit.limit + 1);
+    const sessionCount = await consumeRateLimit(DB, `session:${actorHash}:${rateLimit.bucket}:${windowStart}`, `session:${actorHash}`, rateLimit.bucket, windowStart);
+    const ipLimit = Math.max(rateLimit.limit * 4, rateLimit.limit + 20);
+    const ipCount = await consumeRateLimit(DB, `ip:${ipHash}:${rateLimit.bucket}:${windowStart}`, `ip:${ipHash}`, rateLimit.bucket, windowStart);
     const resetAt = windowStart + windowMs;
-    context.rateLimit = { limit: rateLimit.limit, remaining: Math.max(0, rateLimit.limit - count), resetAt };
+    context.rateLimit = {
+      limit: rateLimit.limit,
+      remaining: Math.min(Math.max(0, rateLimit.limit - sessionCount), Math.max(0, ipLimit - ipCount)),
+      resetAt,
+    };
 
-    if (count === 1) {
+    if (sessionCount === 1) {
       await DB.prepare("DELETE FROM api_rate_limits WHERE window_start < ?")
         .bind(now - 48 * 60 * 60 * 1_000)
         .run();
     }
 
-    if (count > rateLimit.limit) {
+    if (sessionCount > rateLimit.limit || ipCount > ipLimit) {
       return apiJson(
         context,
         { error: "This hourly limit has been reached. Please try again later.", code: "RATE_LIMITED", requestId },
@@ -96,7 +102,7 @@ export async function beginApiRequest(
     });
     return Response.json(
       { error: "Usage protection is temporarily unavailable.", code: "RATE_LIMIT_UNAVAILABLE", requestId },
-      { status: 503, headers: responseHeaders(requestId) },
+      { status: 503, headers: responseHeaders(requestId, undefined, context.setCookie) },
     );
   }
 }
@@ -118,7 +124,7 @@ export function apiJson(
     event: status >= 400 ? "api.failed" : "api.completed",
     ...metrics,
   });
-  const headers = responseHeaders(context.requestId, init.headers);
+  const headers = responseHeaders(context.requestId, init.headers, context.setCookie);
   if (context.rateLimit) {
     headers.set("X-RateLimit-Limit", String(context.rateLimit.limit));
     headers.set("X-RateLimit-Remaining", String(context.rateLimit.remaining));
@@ -143,13 +149,21 @@ export async function reserveModelUsage(
 ): Promise<ModelUsageReservation | Response> {
   const safeEstimate = Math.max(1, Math.ceil(estimatedTokens));
   const day = new Date().toISOString().slice(0, 10);
-  const policy = getLaunchPolicy();
   const userRecordId = `user:${context.userId}:${day}`;
   const siteRecordId = `site:${day}`;
   try {
     const { DB } = getRuntimeBindings();
     if (!DB) throw new Error("D1 is unavailable for model budget enforcement.");
     await ensureStorageSchema(DB);
+    const policy = await getEffectiveLaunchPolicy(DB);
+    if (!policy.modelCallsEnabled) {
+      return apiJson(
+        context,
+        { error: "AI model calls are paused by the site owner. The local visual pipeline is still available.", code: "MODEL_CALLS_DISABLED", requestId: context.requestId },
+        { status: 503 },
+        { event: "usage.model_calls_disabled", feature },
+      );
+    }
     const userReserved = await reserveUsageScope(DB, userRecordId, "user", context.userId, day, safeEstimate, policy.userDailyTokenBudget);
     if (!userReserved) {
       return apiJson(context, { error: "Your daily AI usage limit has been reached. Try again tomorrow.", code: "DAILY_USER_BUDGET_REACHED", requestId: context.requestId }, { status: 429 }, { event: "usage.user_budget_reached", feature });
@@ -157,7 +171,7 @@ export async function reserveModelUsage(
     const siteReserved = await reserveUsageScope(DB, siteRecordId, "site", null, day, safeEstimate, policy.siteDailyTokenBudget);
     if (!siteReserved) {
       await releaseUsageReservation(DB, userRecordId, safeEstimate);
-      return apiJson(context, { error: "The private beta has reached today’s shared AI budget. Try again tomorrow.", code: "DAILY_SITE_BUDGET_REACHED", requestId: context.requestId }, { status: 429 }, { event: "usage.site_budget_reached", feature });
+      return apiJson(context, { error: "The site has reached today’s shared AI budget. Try again tomorrow.", code: "DAILY_SITE_BUDGET_REACHED", requestId: context.requestId }, { status: 429 }, { event: "usage.site_budget_reached", feature });
     }
     if (userReserved === safeEstimate) {
       const expiry = new Date(Date.now() - 14 * 24 * 60 * 60 * 1_000).toISOString().slice(0, 10);
@@ -214,18 +228,51 @@ async function releaseUsageReservation(database: D1Database, id: string, estimat
     .run();
 }
 
-function requestIdentity(request: Request) {
-  const userId = request.headers.get("oai-authenticated-user-id");
-  const email = request.headers.get("oai-authenticated-user-email");
-  if (userId && email) return { userId, email };
-
+function requestIdentity(request: Request): { userId: string; kind: ApiContext["identityKind"]; setCookie?: string } {
   const hostname = new URL(request.url).hostname;
   const isLoopback = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
   const environment = typeof process !== "undefined" ? process.env.NODE_ENV : undefined;
   if (isLoopback && environment === "development") {
-    return { userId: "local-development-user", email: "local@rag-for-all.invalid" };
+    return { userId: "local-development-user", kind: "development" };
+  }
+
+  const existingSession = readCookie(request.headers.get("cookie"), SESSION_COOKIE);
+  if (existingSession && /^[a-f0-9-]{20,64}$/i.test(existingSession)) {
+    return { userId: `anon:${existingSession}`, kind: "anonymous" };
+  }
+  const sessionId = crypto.randomUUID();
+  const isSecure = new URL(request.url).protocol === "https:";
+  const setCookie = `${SESSION_COOKIE}=${sessionId}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_MAX_AGE_SECONDS}${isSecure ? "; Secure" : ""}`;
+  return { userId: `anon:${sessionId}`, kind: "anonymous", setCookie };
+}
+
+async function requestIpHash(request: Request) {
+  const forwarded = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const bindings = getRuntimeBindings();
+  const processEnvironment = typeof process !== "undefined" ? process.env : {};
+  const salt = bindings.ANALYTICS_HASH_SALT || processEnvironment.ANALYTICS_HASH_SALT || "rag-for-all-local-salt";
+  const day = new Date().toISOString().slice(0, 10);
+  return shortHash(`${salt}:${day}:${forwarded}`);
+}
+
+function readCookie(cookieHeader: string | null, name: string) {
+  if (!cookieHeader) return null;
+  for (const item of cookieHeader.split(";")) {
+    const [key, ...valueParts] = item.trim().split("=");
+    if (key === name) return valueParts.join("=");
   }
   return null;
+}
+
+async function consumeRateLimit(database: D1Database, id: string, ownerId: string, bucket: string, windowStart: number) {
+  const row = await database.prepare(`INSERT INTO api_rate_limits
+    (id, owner_id, bucket, window_start, count)
+    VALUES (?, ?, ?, ?, 1)
+    ON CONFLICT(id) DO UPDATE SET count = count + 1
+    RETURNING count`)
+    .bind(id, ownerId, bucket, windowStart)
+    .first<{ count: number }>();
+  return Number(row?.count ?? Number.MAX_SAFE_INTEGER);
 }
 
 async function shortHash(value: string) {
@@ -233,10 +280,11 @@ async function shortHash(value: string) {
   return [...new Uint8Array(digest)].slice(0, 8).map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
-function responseHeaders(requestId: string, input?: HeadersInit) {
+function responseHeaders(requestId: string, input?: HeadersInit, setCookie?: string) {
   const headers = new Headers(input);
   headers.set("Cache-Control", "no-store");
   headers.set("X-Request-Id", requestId);
+  if (setCookie) headers.append("Set-Cookie", setCookie);
   return headers;
 }
 

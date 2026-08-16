@@ -9,6 +9,8 @@ type RuntimeBindings = {
   DATA_RETENTION_DAYS?: string;
   MODEL_DAILY_USER_TOKEN_BUDGET?: string;
   MODEL_DAILY_SITE_TOKEN_BUDGET?: string;
+  ADMIN_OWNER_ID?: string;
+  ANALYTICS_HASH_SALT?: string;
 };
 
 export function getRuntimeBindings() {
@@ -64,6 +66,20 @@ export async function ensureStorageSchema(database: D1Database) {
       request_count INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     )`),
+    database.prepare(`CREATE TABLE IF NOT EXISTS analytics_events (
+      id TEXT PRIMARY KEY NOT NULL,
+      session_id TEXT NOT NULL,
+      event_name TEXT NOT NULL,
+      section TEXT,
+      path TEXT NOT NULL,
+      properties_json TEXT NOT NULL,
+      created_at INTEGER NOT NULL
+    )`),
+    database.prepare(`CREATE TABLE IF NOT EXISTS site_settings (
+      key TEXT PRIMARY KEY NOT NULL,
+      value TEXT NOT NULL,
+      updated_at INTEGER NOT NULL
+    )`),
   ]);
   await ensureColumn(database, "documents", "owner_id", "owner_id TEXT");
   await ensureColumn(database, "pipeline_runs", "owner_id", "owner_id TEXT");
@@ -77,6 +93,9 @@ export async function ensureStorageSchema(database: D1Database) {
     database.prepare("CREATE INDEX IF NOT EXISTS idx_api_rate_limits_window_start ON api_rate_limits(window_start)"),
     database.prepare("CREATE INDEX IF NOT EXISTS idx_model_usage_daily_day ON model_usage_daily(day)"),
     database.prepare("CREATE INDEX IF NOT EXISTS idx_model_usage_daily_owner_day ON model_usage_daily(owner_id, day)"),
+    database.prepare("CREATE INDEX IF NOT EXISTS idx_analytics_events_created_at ON analytics_events(created_at)"),
+    database.prepare("CREATE INDEX IF NOT EXISTS idx_analytics_events_event_created_at ON analytics_events(event_name, created_at)"),
+    database.prepare("CREATE INDEX IF NOT EXISTS idx_analytics_events_session_created_at ON analytics_events(session_id, created_at)"),
   ]);
 }
 
@@ -106,6 +125,19 @@ export function getLaunchPolicy() {
     retentionDays: positiveInteger(bindings.DATA_RETENTION_DAYS || processEnvironment.DATA_RETENTION_DAYS, 7),
     userDailyTokenBudget: positiveInteger(bindings.MODEL_DAILY_USER_TOKEN_BUDGET || processEnvironment.MODEL_DAILY_USER_TOKEN_BUDGET, 1_000_000),
     siteDailyTokenBudget: positiveInteger(bindings.MODEL_DAILY_SITE_TOKEN_BUDGET || processEnvironment.MODEL_DAILY_SITE_TOKEN_BUDGET, 5_000_000),
+  };
+}
+
+export async function getEffectiveLaunchPolicy(database: D1Database) {
+  const defaults = getLaunchPolicy();
+  const rows = await database.prepare("SELECT key, value FROM site_settings WHERE key IN ('model_calls_enabled', 'user_daily_token_budget', 'site_daily_token_budget')")
+    .all<{ key: string; value: string }>();
+  const settings = new Map((rows.results ?? []).map((row) => [row.key, row.value]));
+  return {
+    ...defaults,
+    modelCallsEnabled: settings.get("model_calls_enabled") !== "false",
+    userDailyTokenBudget: positiveInteger(settings.get("user_daily_token_budget"), defaults.userDailyTokenBudget),
+    siteDailyTokenBudget: positiveInteger(settings.get("site_daily_token_budget"), defaults.siteDailyTokenBudget),
   };
 }
 

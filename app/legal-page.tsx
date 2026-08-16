@@ -10,7 +10,7 @@ export function LegalPage({ eyebrow, title, introduction, sections }: { eyebrow:
       <div className="legal-sections">
         {sections.map((section) => <section key={section.title}><h2>{section.title}</h2>{section.paragraphs?.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}{section.bullets && <ul>{section.bullets.map((item) => <li key={item}>{item}</li>)}</ul>}</section>)}
       </div>
-      <footer><Link href="/">← Back to the RAG workspace</Link><span>Private beta · RAG FOR ALL</span></footer>
+      <footer><Link href="/">← Back to the RAG workspace</Link><span>Public beta · RAG FOR ALL</span></footer>
     </article>
   </main>;
 }

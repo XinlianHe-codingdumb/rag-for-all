@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, DragEvent, PointerEvent as ReactPointerEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { parseDocumentFile } from "./lib/document-parser";
 import {
   buildPrompt,
@@ -27,6 +27,7 @@ import type {
 
 type StepKey = "overview" | "upload" | "parse" | "chunk" | "embed" | "retrieve" | "rerank" | "prompt" | "answer" | "compare";
 type ExperimentName = "A" | "B";
+type AnalyticsProperties = Record<string, string | number | boolean>;
 type ApiStatus = {
   openaiConfigured: boolean;
   embeddingModel: string;
@@ -155,6 +156,37 @@ export function RagStudio() {
   const inputRef = useRef<HTMLInputElement>(null);
   const deleteCancelRef = useRef<HTMLButtonElement>(null);
   const mapPanRef = useRef<{ pointerId: number; clientX: number; clientY: number; x: number; y: number } | null>(null);
+  const pageTrackedRef = useRef(false);
+  const initialSectionRef = useRef(true);
+
+  const trackEvent = useCallback((name: string, section?: string, properties: AnalyticsProperties = {}) => {
+    void fetch("/api/events", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, section, path: window.location.pathname, properties }),
+      keepalive: true,
+    }).catch(() => undefined);
+  }, []);
+
+  const openStep = useCallback((step: StepKey, source = "workspace") => {
+    trackEvent("pipeline_step_click", step, { step, source });
+    setActiveStep(step);
+  }, [trackEvent]);
+
+  useEffect(() => {
+    if (pageTrackedRef.current) return;
+    pageTrackedRef.current = true;
+    trackEvent("page_view", "overview", { source: "direct" });
+  }, [trackEvent]);
+
+  useEffect(() => {
+    if (initialSectionRef.current) {
+      initialSectionRef.current = false;
+      return;
+    }
+    trackEvent("section_view", activeStep, { step: activeStep });
+    if (activeStep === "compare") trackEvent("comparison_viewed", "compare", { source: "workspace" });
+  }, [activeStep, trackEvent]);
 
   useEffect(() => {
     fetch("/api/status")
@@ -243,6 +275,9 @@ export function RagStudio() {
     setAnswer(null);
     setRemoteRerank(null);
     setRerankKey("");
+    for (const [setting, value] of Object.entries(patch)) {
+      trackEvent("setting_changed", activeStep, { setting, value: String(value), experiment: activeExperiment });
+    }
   };
 
   const chooseFile = () => inputRef.current?.click();
@@ -282,6 +317,9 @@ export function RagStudio() {
   };
 
   const loadFile = async (file: File) => {
+    const fileType = file.name.split(".").pop()?.toLowerCase() || "unknown";
+    const sizeBucket = file.size < 100_000 ? "under-100kb" : file.size < 1_000_000 ? "100kb-1mb" : file.size < 5_000_000 ? "1mb-5mb" : "5mb-plus";
+    trackEvent("upload_started", "upload", { fileType, sizeBucket, method: "file" });
     setBusy("Reading and cleaning the document…");
     setAnswer(null);
     setPipelineRan(false);
@@ -292,8 +330,10 @@ export function RagStudio() {
       setEmbeddingKey("");
       setRemoteRerank(null);
       setRerankKey("");
-      setActiveStep("parse");
+      openStep("parse", "upload-complete");
       setNotice(`${file.name} parsed successfully: ${parsed.pages.length} page${parsed.pages.length === 1 ? "" : "s"}, ${parsed.text.length.toLocaleString()} characters.`);
+      const pageBucket = parsed.pages.length <= 5 ? "1-5" : parsed.pages.length <= 20 ? "6-20" : parsed.pages.length <= 100 ? "21-100" : "100-plus";
+      trackEvent("upload_completed", "parse", { fileType, sizeBucket, pageBucket, status: "parsed" });
 
       try {
         const form = new FormData();
@@ -310,6 +350,7 @@ export function RagStudio() {
       }
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "This document could not be parsed.");
+      trackEvent("upload_failed", "upload", { fileType, sizeBucket, errorCode: error instanceof Error ? error.name : "UnknownError" });
     } finally {
       setBusy(null);
     }
@@ -318,9 +359,10 @@ export function RagStudio() {
   const runPipeline = async () => {
     if (!document || !chunks.length) {
       setNotice("Upload a readable document before running the pipeline.");
-      setActiveStep("upload");
+      openStep("upload", "pipeline-empty");
       return;
     }
+    trackEvent("pipeline_run", activeStep, { experiment: activeExperiment, method: config.method, source: "user" });
     setBusy("Embedding and retrieving the best evidence…");
     setAnswer(null);
     let nextEmbedding = localEmbedding;
@@ -375,6 +417,7 @@ export function RagStudio() {
     setPipelineRan(true);
     setBusy(null);
     setNotice(`Experiment ${activeExperiment} retrieved ${nextCandidates.length} candidates, then reranked them to ${nextResults.length} final chunks using ${rerankState ? "OpenAI" : "a local relevance fallback"}.`);
+    trackEvent("pipeline_run", "rerank", { experiment: activeExperiment, method: config.method, status: "completed", source: rerankState ? "OpenAI" : "local" });
     void saveRun(nextResults, nextEmbedding);
   };
 
@@ -424,13 +467,18 @@ export function RagStudio() {
           durationMs: body.durationMs,
         });
         setNotice(`Grounded answer generated with ${body.model}. Follow the chunk citations before trusting it.`);
+        trackEvent("answer_generated", "answer", { source: "OpenAI", status: "completed", durationBucket: durationBucket(body.durationMs) });
       } else {
         setAnswer({ text: extractiveAnswer(query, finalEvidence), source: "Extractive fallback", model: "Local sentence selection", durationMs: Math.round(performance.now() - startedAt) });
         setNotice("OpenAI is not configured, so the answer uses retrieved sentences directly. No paid API call was made.");
+        trackEvent("answer_failed", "answer", { source: "OpenAI", status: String(response.status), errorCode: "MODEL_FALLBACK" });
+        trackEvent("answer_generated", "answer", { source: "local", status: "fallback", durationBucket: durationBucket(performance.now() - startedAt) });
       }
     } catch {
       setAnswer({ text: extractiveAnswer(query, finalEvidence), source: "Extractive fallback", model: "Local sentence selection", durationMs: Math.round(performance.now() - startedAt) });
       setNotice("The model API was unavailable, so RAG FOR ALL used a local extractive answer.");
+      trackEvent("answer_failed", "answer", { source: "OpenAI", status: "unavailable", errorCode: "NETWORK_ERROR" });
+      trackEvent("answer_generated", "answer", { source: "local", status: "fallback", durationBucket: durationBucket(performance.now() - startedAt) });
     } finally {
       setBusy(null);
     }
@@ -445,8 +493,9 @@ export function RagStudio() {
     setEmbeddingKey("");
     setAnswer(null);
     setPipelineRan(false);
-    setActiveStep("upload");
+    openStep("upload", "document-deleted");
     setNotice("Document removed from this session. Clean desk, clean vectors.");
+    trackEvent("document_deleted", "upload", { source: persisted ? "storage" : "browser" });
     if (id && persisted) {
       try {
         await fetch("/api/documents", {
@@ -468,7 +517,7 @@ export function RagStudio() {
     setEmbeddingKey("");
     setPipelineRan(false);
     setNotice("Sample handbook restored. It is synthetic and stays in the browser.");
-    setActiveStep("parse");
+    openStep("parse", "restore-sample");
   };
 
   const activeMeta = activeStep === "overview" ? null : STEPS.find((step) => step.key === activeStep)!;
@@ -495,14 +544,14 @@ export function RagStudio() {
             <small>{document?.name ?? "Upload to begin"}</small>
           </div>
           <nav aria-label="RAG pipeline">
-            <button type="button" className={`nav-step overview-nav ${activeStep === "overview" ? "active" : ""}`} onClick={() => setActiveStep("overview")}>
+            <button type="button" className={`nav-step overview-nav ${activeStep === "overview" ? "active" : ""}`} onClick={() => openStep("overview", "sidebar")}>
               <span className="step-number">00</span>
               <span className="step-copy"><strong>Overview</strong><small>See the whole journey</small></span>
               <span className="step-state">⌂</span>
             </button>
             <p className="nav-label">PIPELINE</p>
             {STEPS.map((step) => (
-              <button type="button" key={step.key} className={`nav-step ${activeStep === step.key ? "active" : ""}`} onClick={() => setActiveStep(step.key)}>
+              <button type="button" key={step.key} className={`nav-step ${activeStep === step.key ? "active" : ""}`} onClick={() => openStep(step.key, "sidebar")}>
                 <span className="step-number">{step.number}</span>
                 <span className="step-copy"><strong>{step.title}</strong><small>{step.note}</small></span>
                 <span className={`step-state ${completed(step.key) ? "done" : ""}`}>{completed(step.key) ? "✓" : "·"}</span>
@@ -510,8 +559,8 @@ export function RagStudio() {
             ))}
           </nav>
           <div className="sidebar-footer">
-            <button type="button" onClick={() => setActiveStep("compare")}><span>⌁</span> Experiment history</button>
-            <button type="button" onClick={() => setActiveStep("overview")}><span>?</span> Plain-English guide</button>
+            <button type="button" onClick={() => openStep("compare", "sidebar-footer")}><span>⌁</span> Experiment history</button>
+            <button type="button" onClick={() => openStep("overview", "sidebar-footer")}><span>?</span> Plain-English guide</button>
           </div>
         </aside>
 
@@ -521,7 +570,8 @@ export function RagStudio() {
 
           {activeStep === "overview" ? (
             <OverviewPage
-              onStep={setActiveStep}
+              onStep={(step) => openStep(step, "overview")}
+              trackEvent={trackEvent}
             />
           ) : <>
             <div className="content-header">
@@ -531,14 +581,14 @@ export function RagStudio() {
                 <p>{stepIntro(activeStep)}</p>
               </div>
               <div className="mode-switch" aria-label="Interface mode">
-                {(["Basic", "Advanced"] as const).map((item) => <button key={item} type="button" className={mode === item ? "selected" : ""} onClick={() => setMode(item)}>{item}</button>)}
+                {(["Basic", "Advanced"] as const).map((item) => <button key={item} type="button" className={mode === item ? "selected" : ""} onClick={() => { setMode(item); trackEvent("setting_changed", activeStep, { setting: "interface_mode", value: item }); }}>{item}</button>)}
               </div>
             </div>
 
             <div className="experiment-bar">
               <div className="experiment-tabs">
                 {(["A", "B"] as const).map((item) => (
-                  <button key={item} type="button" className={activeExperiment === item ? "active" : ""} onClick={() => setActiveExperiment(item)}>
+                  <button key={item} type="button" className={activeExperiment === item ? "active" : ""} onClick={() => { setActiveExperiment(item); trackEvent("setting_changed", activeStep, { setting: "experiment", value: item, experiment: item }); }}>
                     Experiment {item}<small>{item === "A" ? "Baseline" : "Challenger"}</small>
                   </button>
                 ))}
@@ -675,7 +725,7 @@ export function RagStudio() {
                   <div className="answer-head"><span className={`preview-badge ${answer?.source === "OpenAI" ? "live" : ""}`}>{answer?.source ?? "NOT GENERATED"}</span><button type="button" onClick={() => void generateAnswer()} disabled={Boolean(busy) || !finalEvidence.length}>{answer ? "Generate again" : "Generate grounded answer"}</button></div>
                   <h2>{query}</h2>
                   <p className="answer-text">{answer?.text ?? "Generate an answer after reviewing the retrieved evidence. RAG is more trustworthy when the receipts arrive before the confidence."}</p>
-                  <div className="citations">{finalEvidence.map((item) => <button type="button" key={item.id} onClick={() => setActiveStep("rerank")}>Chunk {item.id} · {pageLabel(item.pageStart, item.pageEnd)}</button>)}</div>
+                  <div className="citations">{finalEvidence.map((item) => <button type="button" key={item.id} onClick={() => { trackEvent("citation_viewed", "answer", { source: "answer", step: "rerank" }); openStep("rerank", "citation"); }}>Chunk {item.id} · {pageLabel(item.pageStart, item.pageEnd)}</button>)}</div>
                 </div>
                 <div className="answer-metrics">
                   <Stat label="Answer model" value={answer?.model ?? apiStatus?.responseModel ?? "Not configured"} />
@@ -704,7 +754,7 @@ export function RagStudio() {
                 </div>
                 <QuestionBox query={query} setQuery={(value) => setQuery(value)} run={() => setNotice("Both experiments recalculated with local retrieval and the same local second-pass reranker.")} busy={false} buttonLabel="Refresh comparison" />
                 <div className="compare-grid">{comparisons.map((item) => <article className={`compare-card ${activeExperiment === item.name ? "selected" : ""}`} key={item.name}>
-                  <header><div><strong>{item.name}</strong><span>{item.name === "A" ? "BASELINE" : "CHALLENGER"}</span></div><button type="button" onClick={() => setActiveExperiment(item.name)}>Edit {item.name}</button></header>
+                  <header><div><strong>{item.name}</strong><span>{item.name === "A" ? "BASELINE" : "CHALLENGER"}</span></div><button type="button" onClick={() => { setActiveExperiment(item.name); trackEvent("setting_changed", "compare", { setting: "experiment", value: item.name, experiment: item.name }); }}>Edit {item.name}</button></header>
                   <div className="compare-method">Experiment {item.name}<span>{item.settings.method} search</span></div>
                   <p className="compare-recipe">Cuts the document into <b>{item.settings.chunkSize}-token chunks</b> with <b>{item.settings.overlap} tokens of overlap</b>, uses <b>{item.settings.strategy.toLowerCase()} splitting</b>, then keeps <b>{item.settings.topK} passages after reranking</b>.</p>
                   <div className="compare-metrics"><Stat label="Total chunks" value={String(item.chunks)} /><Stat label="Candidate pool" value={String(item.retrievals.length)} /><Stat label="Final evidence" value={String(item.results.length)} /><Stat label="Context sent" value={`${item.contextTokens} tokens`} /><Stat label="Best second-pass score" value={`${Math.round(item.best * 100)}%`} /></div>
@@ -738,16 +788,20 @@ export function RagStudio() {
 
 type OverviewPane = "intro" | "concepts" | "pipeline";
 
-function OverviewPage({ onStep }: { onStep: (step: StepKey) => void }) {
+function OverviewPage({ onStep, trackEvent }: { onStep: (step: StepKey) => void; trackEvent: (name: string, section?: string, properties?: AnalyticsProperties) => void }) {
   const [pane, setPane] = useState<OverviewPane>("intro");
   const [conceptIndex, setConceptIndex] = useState(0);
   const concept = RAG_CONCEPTS[conceptIndex];
   const mainSteps = STEPS.filter((step) => step.key !== "compare");
   const compareStep = STEPS.find((step) => step.key === "compare")!;
+  useEffect(() => {
+    if (pane === "concepts") trackEvent("concept_card_view", "concepts", { card: conceptIndex + 1 });
+  }, [conceptIndex, pane, trackEvent]);
   const showPrevious = () => setConceptIndex((current) => Math.max(0, current - 1));
   const showNext = () => {
     if (conceptIndex === RAG_CONCEPTS.length - 1) {
       setPane("pipeline");
+      trackEvent("journey_choice", "pipeline", { choice: "concepts-to-pipeline", source: "concept-tour" });
       return;
     }
     setConceptIndex((current) => Math.min(RAG_CONCEPTS.length - 1, current + 1));
@@ -769,12 +823,12 @@ function OverviewPage({ onStep }: { onStep: (step: StepKey) => void }) {
             <article className="intro-choice beginner-choice">
               <div className="choice-speech"><small>NEW TO RAG?</small><strong>“I should learn what RAG is first. I’ll be right back.”</strong><span>Take the two-minute concept tour.</span></div>
               <img src="/doodle-walking.png" alt="A curious doodle person walking toward the RAG introduction" />
-              <button type="button" onClick={() => setPane("concepts")} aria-label="Open the RAG concept tour">→</button>
+              <button type="button" onClick={() => { setPane("concepts"); trackEvent("journey_choice", "concepts", { choice: "learn-rag", source: "intro" }); }} aria-label="Open the RAG concept tour">→</button>
             </article>
             <article className="intro-choice experienced-choice">
               <div className="choice-speech"><small>ALREADY KNOW RAG?</small><strong>“I know the theory. Just show me the good stuff.”</strong><span>Jump into the working pipeline.</span></div>
               <img src="/doodle-lounging.png" alt="A relaxed doodle person waiting to see the RAG pipeline" />
-              <button type="button" onClick={() => setPane("pipeline")} aria-label="Open the interactive RAG pipeline">↓</button>
+              <button type="button" onClick={() => { setPane("pipeline"); trackEvent("journey_choice", "pipeline", { choice: "skip-to-pipeline", source: "intro" }); }} aria-label="Open the interactive RAG pipeline">↓</button>
             </article>
           </aside>
         </section>
@@ -782,7 +836,7 @@ function OverviewPage({ onStep }: { onStep: (step: StepKey) => void }) {
         <section className="overview-pane concept-pane" aria-label="RAG concept tour" inert={pane !== "concepts"}>
           <div className="overview-pane-toolbar">
             <button type="button" onClick={() => setPane("intro")}>← Back to intro</button>
-            <button type="button" onClick={() => setPane("pipeline")}>Skip to interactive pipeline ↓</button>
+            <button type="button" onClick={() => { setPane("pipeline"); trackEvent("journey_choice", "pipeline", { choice: "skip-to-pipeline", source: "concept-tour" }); }}>Skip to interactive pipeline ↓</button>
           </div>
           <section className={`concept-deck concept-${concept.visual}`} aria-label="RAG concept cards">
             <div className="concept-stage" key={conceptIndex}>
@@ -1046,6 +1100,14 @@ function comparisonVerdict(comparisons: Array<{ name: ExperimentName; best: numb
   const bPages = new Set(b.results.flatMap((item) => Array.from({ length: item.pageEnd - item.pageStart + 1 }, (_, index) => item.pageStart + index)));
   const sharedPages = [...aPages].filter((page) => bPages.has(page)).length;
   return `A sends ${a.contextTokens} context tokens and B sends ${b.contextTokens}. Their final evidence shares ${sharedPages} source page${sharedPages === 1 ? "" : "s"}; inspect the passages before calling either setup better.`;
+}
+
+function durationBucket(milliseconds: number) {
+  if (milliseconds < 500) return "under-500ms";
+  if (milliseconds < 2_000) return "500ms-2s";
+  if (milliseconds < 5_000) return "2s-5s";
+  if (milliseconds < 15_000) return "5s-15s";
+  return "15s-plus";
 }
 
 function friendlyProjectName(name: string) {

@@ -19,13 +19,16 @@ The current runnable milestone includes:
 - OpenAI embeddings and Responses API when a server-side key is configured.
 - Honest local fallbacks when OpenAI is not configured or unavailable.
 - D1 metadata/run history and R2 originals when storage bindings are available.
-- Private-site identity, per-user document/run isolation, and D1-backed API rate limits.
+- No-login public use with a seven-day first-party anonymous session.
+- Per-session document/run isolation plus session and daily-hashed-IP API rate limits.
+- Privacy-safe section, funnel, and feature analytics with a private owner dashboard at `/admin`.
+- Live owner controls for per-session/site token budgets and an emergency model-call switch.
 - Metadata-only request logs with request IDs and baseline browser security headers.
 - One-click deletion of the original, parsed copy, and related run history.
 - Real Experiment A/B comparison using two pipeline configurations.
 - Responsive white interface.
 
-Scanned-PDF OCR, table reconstruction, multi-user accounts, billing, and production-scale vector storage remain outside this milestone.
+Scanned-PDF OCR, table reconstruction, accounts, billing, and production-scale vector storage remain outside this milestone.
 
 ## Run locally
 
@@ -52,6 +55,8 @@ Do not commit API keys. Copy `.env.example` to `.env.local`, add your key there,
 OPENAI_API_KEY=your-key-here
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 OPENAI_RESPONSE_MODEL=gpt-5.6-luna
+ADMIN_OWNER_ID=your-sites-owner-id
+ANALYTICS_HASH_SALT=a-long-random-secret
 ```
 
 The browser never receives the key. If no key is present, the app still runs end-to-end with local TF-IDF retrieval and an extractive answer fallback.
@@ -69,8 +74,8 @@ The test suite builds the app, checks its server-rendered shell, parses real PDF
 - [Product specification](docs/PRODUCT.md)
 - [Technical architecture](docs/ARCHITECTURE.md)
 - [Chinese project management guide](PROJECT_MANAGER_GUIDE.zh-CN.md)
-- [Private-beta launch checklist](docs/LAUNCH_READINESS.md)
-- [Private-beta operations runbook](docs/BETA_OPERATIONS.md)
+- [Public-beta launch checklist](docs/LAUNCH_READINESS.md)
+- [Public-beta operations runbook](docs/BETA_OPERATIONS.md)
 
 ## Git learning path
 

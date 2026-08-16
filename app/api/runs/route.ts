@@ -7,7 +7,6 @@ export async function GET(request: Request) {
   try {
     const { DB } = requireStorageBindings();
     await ensureStorageSchema(DB);
-    await DB.prepare("UPDATE pipeline_runs SET owner_id = ? WHERE owner_id IS NULL").bind(authorization.userId).run();
     const documentId = new URL(request.url).searchParams.get("documentId");
     const statement = documentId
       ? DB.prepare("SELECT * FROM pipeline_runs WHERE document_id = ? AND owner_id = ? ORDER BY created_at DESC LIMIT 30").bind(documentId, authorization.userId)
