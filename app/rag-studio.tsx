@@ -148,9 +148,11 @@ export function RagStudio() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [pipelineRan, setPipelineRan] = useState(false);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [embeddingView, setEmbeddingView] = useState({ zoom: 1, x: 0, y: 0 });
   const [selectedVectorId, setSelectedVectorId] = useState<number | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const deleteCancelRef = useRef<HTMLButtonElement>(null);
   const mapPanRef = useRef<{ pointerId: number; clientX: number; clientY: number; x: number; y: number } | null>(null);
 
   useEffect(() => {
@@ -159,6 +161,16 @@ export function RagStudio() {
       .then((status: ApiStatus) => setApiStatus(status))
       .catch(() => setApiStatus({ openaiConfigured: false, embeddingModel: "Local TF-IDF", responseModel: "Extractive fallback", persistenceConfigured: false }));
   }, []);
+
+  useEffect(() => {
+    if (!deleteDialogOpen) return;
+    deleteCancelRef.current?.focus();
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setDeleteDialogOpen(false);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [deleteDialogOpen]);
 
   const config = experiments[activeExperiment];
   const chunks = useMemo(() => document ? createChunks(document, config) : [], [document, config]);
@@ -426,6 +438,7 @@ export function RagStudio() {
   const deleteDocument = async () => {
     const id = document?.id;
     const persisted = document?.persisted;
+    setDeleteDialogOpen(false);
     setDocument(null);
     setRemoteEmbedding(null);
     setEmbeddingKey("");
@@ -546,8 +559,8 @@ export function RagStudio() {
                   <span>Privacy by default</span>
                   <p>Parsing starts in your browser. When storage is available, originals and parsed text are stored together and share one deletion path.</p>
                   <strong className="storage-state">{document?.persisted ? "Saved privately" : "Browser session only"}</strong>
-                  {document && <button type="button" onClick={() => void deleteDocument()}>Delete current document</button>}
-                  {!document && <button type="button" onClick={restoreSample}>Restore sample handbook</button>}
+                  {document && <button className="delete-document-button" type="button" onClick={() => setDeleteDialogOpen(true)}><span aria-hidden="true">×</span><strong>Delete document</strong><small>Remove the file, parsed text, and experiment history</small></button>}
+                  {!document && <button className="restore-sample-button" type="button" onClick={restoreSample}>Restore sample handbook</button>}
                 </div>
               </section>
             )}
@@ -703,6 +716,20 @@ export function RagStudio() {
           </>}
         </section>
       </div>
+      {deleteDialogOpen && document && (
+        <div className="delete-dialog-backdrop" role="presentation">
+          <section className="delete-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title" aria-describedby="delete-dialog-description">
+            <div className="delete-dialog-icon" aria-hidden="true">×</div>
+            <p>DELETE DOCUMENT</p>
+            <h2 id="delete-dialog-title">Remove this document?</h2>
+            <p id="delete-dialog-description"><strong>{document.name}</strong> and its parsed text and experiment history will be deleted. This cannot be undone.</p>
+            <div className="delete-dialog-actions">
+              <button ref={deleteCancelRef} type="button" onClick={() => setDeleteDialogOpen(false)}>Keep document</button>
+              <button className="confirm-delete-button" type="button" onClick={() => void deleteDocument()}>Delete permanently</button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }
