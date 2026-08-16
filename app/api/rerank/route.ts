@@ -1,17 +1,22 @@
 import { getOpenAIConfig } from "../../../db/runtime";
+import { apiError, apiJson, beginApiRequest } from "../../lib/api-guard";
 
 type Candidate = { id: number; text: string };
 
 export async function POST(request: Request) {
+  const authorization = await beginApiRequest(request, "model.rerank", { bucket: "rerank", limit: 60 });
+  if (authorization instanceof Response) return authorization;
   const config = getOpenAIConfig();
   if (!config.apiKey) {
-    return Response.json(
+    return apiJson(
+      authorization,
       { error: "OpenAI is not configured. Local relevance reranking remains available.", code: "OPENAI_KEY_MISSING" },
       { status: 503 },
     );
   }
 
-  const payload = (await request.json()) as { question?: unknown; candidates?: unknown };
+  try {
+    const payload = (await request.json()) as { question?: unknown; candidates?: unknown };
   const question = String(payload.question ?? "").trim();
   const candidates = Array.isArray(payload.candidates)
     ? payload.candidates.slice(0, 24).map((item) => {
@@ -19,12 +24,12 @@ export async function POST(request: Request) {
       return { id: Number(candidate.id), text: String(candidate.text ?? "").slice(0, 12_000) };
     }).filter((item) => Number.isInteger(item.id) && item.id > 0 && item.text.trim())
     : [];
-  if (!question || !candidates.length) return Response.json({ error: "question and candidates are required." }, { status: 400 });
-  if (question.length > 4_000) return Response.json({ error: "The question exceeds the current safety limit." }, { status: 400 });
+    if (!question || !candidates.length) return apiJson(authorization, { error: "question and candidates are required." }, { status: 400 });
+    if (question.length > 4_000) return apiJson(authorization, { error: "The question exceeds the current safety limit." }, { status: 400 });
 
   const startedAt = Date.now();
   const candidateText = candidates.map((item) => `CHUNK ${item.id}\n${item.text}`).join("\n\n---\n\n");
-  const response = await fetch("https://api.openai.com/v1/responses", {
+    const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -36,28 +41,32 @@ export async function POST(request: Request) {
       text: { verbosity: "low" },
     }),
   });
-  const body = await response.json() as {
+    const body = await response.json() as {
     output_text?: string;
     output?: Array<{ content?: Array<{ type?: string; text?: string }> }>;
     model?: string;
     error?: { message?: string };
   };
-  if (!response.ok) return Response.json({ error: body.error?.message || "Reranking failed." }, { status: response.status || 502 });
-  const output = body.output_text || body.output
+    if (!response.ok) return apiJson(authorization, { error: body.error?.message || "Reranking failed." }, { status: response.status || 502 }, { provider: "openai" });
+    const output = body.output_text || body.output
     ?.flatMap((item) => item.content ?? [])
     .filter((item) => item.type === "output_text" && item.text)
     .map((item) => item.text)
     .join("\n") || "";
-  try {
     const parsed = JSON.parse(extractJson(output)) as { results?: Array<{ id?: unknown; score?: unknown; reason?: unknown }> };
     const allowed = new Set(candidates.map((item) => item.id));
     const signals = (parsed.results ?? [])
       .map((item) => ({ id: Number(item.id), score: Math.max(0, Math.min(1, Number(item.score) / 100)), reason: String(item.reason ?? "Relevant to the complete question.").slice(0, 220) }))
       .filter((item) => allowed.has(item.id) && Number.isFinite(item.score));
     if (signals.length !== candidates.length) throw new Error("The reranker returned an incomplete candidate list.");
-    return Response.json({ signals, model: body.model || config.responseModel, durationMs: Date.now() - startedAt });
+    return apiJson(
+      authorization,
+      { signals, model: body.model || config.responseModel, durationMs: Date.now() - startedAt },
+      {},
+      { provider: "openai", model: body.model || config.responseModel, candidateCount: candidates.length },
+    );
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "The reranker response was not valid JSON." }, { status: 502 });
+    return apiError(authorization, error, "Reranking failed.", "RERANK_FAILED", 502);
   }
 }
 

@@ -8,5 +8,7 @@ export async function GET() {
     embeddingModel: openai.embeddingModel,
     responseModel: openai.responseModel,
     persistenceConfigured: Boolean(bindings.DB && bindings.DOCUMENTS),
+    authenticationMode: "Sites authenticated-user headers",
+    usageProtectionConfigured: Boolean(bindings.DB),
   });
 }

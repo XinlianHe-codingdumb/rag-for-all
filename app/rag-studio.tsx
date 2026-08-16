@@ -724,20 +724,8 @@ function OverviewPage({ onStep }: { onStep: (step: StepKey) => void }) {
     setConceptIndex((current) => Math.min(RAG_CONCEPTS.length - 1, current + 1));
   };
 
-  const onOverviewKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
-    if (pane !== "concepts") return;
-    if (event.key === "ArrowLeft" && conceptIndex > 0) {
-      event.preventDefault();
-      showPrevious();
-    }
-    if (event.key === "ArrowRight") {
-      event.preventDefault();
-      showNext();
-    }
-  };
-
   return <section className="overview-page">
-    <div className={`overview-viewport overview-show-${pane}`} onKeyDown={onOverviewKeyDown}>
+    <div className={`overview-viewport overview-show-${pane}`}>
       <div className="overview-world">
         <section className="overview-pane intro-pane" aria-label="Introduction to RAG FOR ALL" inert={pane !== "intro"}>
           <div className="intro-main">
@@ -908,9 +896,12 @@ function QuestionBox({ query, setQuery, run, busy, buttonLabel = "Retrieve evide
 }
 
 function RetrievalMap({ chunks, points, queryPoint, candidates, topChunks, topK, query }: { chunks: RagChunk[]; points: Array<{ x: number; y: number }>; queryPoint: { x: number; y: number }; candidates: RankedChunk[]; topChunks: RerankedChunk[]; topK: number; query: string }) {
-  const [zoom, setZoom] = useState(1);
   const candidateById = new Map(candidates.map((candidate) => [candidate.id, candidate]));
   const displayedTopChunks = topChunks.length ? topChunks.slice(0, topK) : candidates.slice(0, topK);
+  const focusKey = `${query}:${displayedTopChunks.map((chunk) => chunk.id).join(",")}`;
+  const [zoomState, setZoomState] = useState({ focusKey: "", value: 1 });
+  const zoom = zoomState.focusKey === focusKey ? zoomState.value : 1;
+  const updateZoom = (next: (current: number) => number) => setZoomState({ focusKey, value: next(zoom) });
   const topKOrder = new Map(displayedTopChunks.map((candidate, index) => [candidate.id, index + 1]));
   const focusPoints = [queryPoint, ...displayedTopChunks.map((candidate) => points[candidate.id - 1] ?? { x: 50, y: 50 })];
   const minX = Math.min(...focusPoints.map((point) => point.x));
@@ -924,18 +915,15 @@ function RetrievalMap({ chunks, points, queryPoint, candidates, topChunks, topK,
     y: 50 + (point.y - center.y) * fitScale * zoom,
   });
   const displayedQuery = displayPoint(queryPoint);
-  const focusKey = `${query}:${displayedTopChunks.map((chunk) => chunk.id).join(",")}`;
-
-  useEffect(() => setZoom(1), [focusKey]);
 
   return <section className="retrieval-map-card">
     <div className="retrieval-space" aria-label="Question vector connected to its nearest chunk candidates">
       <div className="retrieval-space-grid" style={{ backgroundSize: `${Math.max(22, 34 * fitScale * zoom)}px ${Math.max(22, 34 * fitScale * zoom)}px` }} />
       <div className="retrieval-map-controls" aria-label="Vector map zoom controls">
-        <button type="button" onClick={() => setZoom((current) => Math.max(.75, current - .25))} disabled={zoom <= .75} aria-label="Zoom out">−</button>
+        <button type="button" onClick={() => updateZoom((current) => Math.max(.75, current - .25))} disabled={zoom <= .75} aria-label="Zoom out">−</button>
         <span>{Math.round(zoom * 100)}%</span>
-        <button type="button" onClick={() => setZoom((current) => Math.min(1.75, current + .25))} disabled={zoom >= 1.75} aria-label="Zoom in">+</button>
-        <button type="button" className="fit-top-k" onClick={() => setZoom(1)}>Fit Top K</button>
+        <button type="button" onClick={() => updateZoom((current) => Math.min(1.75, current + .25))} disabled={zoom >= 1.75} aria-label="Zoom in">+</button>
+        <button type="button" className="fit-top-k" onClick={() => setZoomState({ focusKey, value: 1 })}>Fit Top K</button>
       </div>
       <div className="retrieval-fit-label">Q + {displayedTopChunks.length} TOP K CHUNKS · AUTO-FITTED</div>
       <svg className="retrieval-links" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">

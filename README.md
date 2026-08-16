@@ -19,6 +19,8 @@ The current runnable milestone includes:
 - OpenAI embeddings and Responses API when a server-side key is configured.
 - Honest local fallbacks when OpenAI is not configured or unavailable.
 - D1 metadata/run history and R2 originals when storage bindings are available.
+- Private-site identity, per-user document/run isolation, and D1-backed API rate limits.
+- Metadata-only request logs with request IDs and baseline browser security headers.
 - One-click deletion of the original, parsed copy, and related run history.
 - Real Experiment A/B comparison using two pipeline configurations.
 - Responsive white interface.
@@ -66,6 +68,8 @@ The test suite builds the app, checks its server-rendered shell, parses real PDF
 
 - [Product specification](docs/PRODUCT.md)
 - [Technical architecture](docs/ARCHITECTURE.md)
+- [Chinese project management guide](PROJECT_MANAGER_GUIDE.zh-CN.md)
+- [Private-beta launch checklist](docs/LAUNCH_READINESS.md)
 
 ## Git learning path
 

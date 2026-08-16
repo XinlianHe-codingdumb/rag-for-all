@@ -1,20 +1,36 @@
 import { ensureStorageSchema, requireStorageBindings } from "../../../db/runtime";
+import { apiError, apiJson, beginApiRequest, type ApiContext } from "../../lib/api-guard";
 
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
+const MAX_PARSED_CHARACTERS = 2_000_000;
+const MAX_PAGES = 5_000;
+const ALLOWED_MIME_TYPES = new Set([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/plain",
+  "text/markdown",
+  "application/octet-stream",
+]);
 
-export async function GET() {
+export async function GET(request: Request) {
+  const authorization = await beginApiRequest(request, "documents.list");
+  if (authorization instanceof Response) return authorization;
   try {
     const { DB } = requireStorageBindings();
     await ensureStorageSchema(DB);
+    await claimLegacyDocuments(DB, authorization.userId);
     const rows = await DB.prepare(`SELECT id, name, mime_type AS mimeType, size, page_count AS pageCount,
-      character_count AS characterCount, created_at AS createdAt FROM documents ORDER BY created_at DESC LIMIT 30`).all();
-    return Response.json({ documents: rows.results ?? [] });
+      character_count AS characterCount, created_at AS createdAt FROM documents
+      WHERE owner_id = ? ORDER BY created_at DESC LIMIT 30`).bind(authorization.userId).all();
+    return apiJson(authorization, { documents: rows.results ?? [] });
   } catch (error) {
-    return storageError(error);
+    return storageError(authorization, error);
   }
 }
 
 export async function POST(request: Request) {
+  const authorization = await beginApiRequest(request, "documents.create", { bucket: "document_upload", limit: 20 });
+  if (authorization instanceof Response) return authorization;
   try {
     const { DB, DOCUMENTS } = requireStorageBindings();
     await ensureStorageSchema(DB);
@@ -22,16 +38,23 @@ export async function POST(request: Request) {
     const file = form.get("file");
     const parsed = form.get("parsed");
     if (!(file instanceof File) || typeof parsed !== "string") {
-      return Response.json({ error: "file and parsed document data are required." }, { status: 400 });
+      return apiJson(authorization, { error: "file and parsed document data are required." }, { status: 400 });
     }
-    if (file.size > MAX_FILE_BYTES) return Response.json({ error: "File exceeds the 20 MB limit." }, { status: 413 });
+    if (file.size > MAX_FILE_BYTES) return apiJson(authorization, { error: "File exceeds the 20 MB limit." }, { status: 413 });
+    const contentType = file.type || "application/octet-stream";
+    if (!ALLOWED_MIME_TYPES.has(contentType)) {
+      return apiJson(authorization, { error: "This file type is not supported." }, { status: 415 });
+    }
     const metadata = JSON.parse(parsed) as { id?: string; pages?: unknown[]; text?: string; mimeType?: string };
     if (!metadata.id || !Array.isArray(metadata.pages) || typeof metadata.text !== "string") {
-      return Response.json({ error: "Parsed document data is invalid." }, { status: 400 });
+      return apiJson(authorization, { error: "Parsed document data is invalid." }, { status: 400 });
+    }
+    if (metadata.text.length > MAX_PARSED_CHARACTERS || metadata.pages.length > MAX_PAGES) {
+      return apiJson(authorization, { error: "The parsed document exceeds the current processing limit." }, { status: 413 });
     }
     const id = metadata.id;
-    const originalKey = `documents/${id}/original`;
-    const parsedKey = `documents/${id}/parsed.json`;
+    const originalKey = `documents/${authorization.actorHash}/${id}/original`;
+    const parsedKey = `documents/${authorization.actorHash}/${id}/parsed.json`;
     const originalBytes = await file.arrayBuffer();
     await Promise.all([
       DOCUMENTS.put(originalKey, originalBytes, { httpMetadata: { contentType: file.type || metadata.mimeType } }),
@@ -39,36 +62,48 @@ export async function POST(request: Request) {
     ]);
     const createdAt = Date.now();
     await DB.prepare(`INSERT INTO documents
-      (id, name, mime_type, size, page_count, character_count, original_key, parsed_key, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .bind(id, file.name, file.type || metadata.mimeType || "application/octet-stream", file.size, metadata.pages.length, metadata.text.length, originalKey, parsedKey, createdAt)
+      (id, name, mime_type, size, page_count, character_count, original_key, parsed_key, owner_id, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .bind(id, file.name, contentType || metadata.mimeType, file.size, metadata.pages.length, metadata.text.length, originalKey, parsedKey, authorization.userId, createdAt)
       .run();
-    return Response.json({ document: { id, name: file.name, size: file.size, pageCount: metadata.pages.length, characterCount: metadata.text.length, createdAt } }, { status: 201 });
+    return apiJson(
+      authorization,
+      { document: { id, name: file.name, size: file.size, pageCount: metadata.pages.length, characterCount: metadata.text.length, createdAt } },
+      { status: 201 },
+      { fileBytes: file.size, pageCount: metadata.pages.length, characterCount: metadata.text.length },
+    );
   } catch (error) {
-    return storageError(error);
+    return storageError(authorization, error);
   }
 }
 
 export async function DELETE(request: Request) {
+  const authorization = await beginApiRequest(request, "documents.delete");
+  if (authorization instanceof Response) return authorization;
   try {
     const { DB, DOCUMENTS } = requireStorageBindings();
     await ensureStorageSchema(DB);
     const payload = await request.json() as { id?: string };
-    if (!payload.id) return Response.json({ error: "id is required." }, { status: 400 });
-    const row = await DB.prepare("SELECT original_key AS originalKey, parsed_key AS parsedKey FROM documents WHERE id = ?")
-      .bind(payload.id).first<{ originalKey: string; parsedKey: string }>();
+    if (!payload.id) return apiJson(authorization, { error: "id is required." }, { status: 400 });
+    const row = await DB.prepare(`SELECT original_key AS originalKey, parsed_key AS parsedKey FROM documents
+      WHERE id = ? AND (owner_id = ? OR owner_id IS NULL)`)
+      .bind(payload.id, authorization.userId).first<{ originalKey: string; parsedKey: string }>();
+    if (!row) return apiJson(authorization, { error: "Document not found." }, { status: 404 });
     if (row) await Promise.all([DOCUMENTS.delete(row.originalKey), DOCUMENTS.delete(row.parsedKey)]);
     await DB.batch([
-      DB.prepare("DELETE FROM pipeline_runs WHERE document_id = ?").bind(payload.id),
-      DB.prepare("DELETE FROM documents WHERE id = ?").bind(payload.id),
+      DB.prepare("DELETE FROM pipeline_runs WHERE document_id = ? AND (owner_id = ? OR owner_id IS NULL)").bind(payload.id, authorization.userId),
+      DB.prepare("DELETE FROM documents WHERE id = ? AND (owner_id = ? OR owner_id IS NULL)").bind(payload.id, authorization.userId),
     ]);
-    return Response.json({ deleted: true });
+    return apiJson(authorization, { deleted: true });
   } catch (error) {
-    return storageError(error);
+    return storageError(authorization, error);
   }
 }
 
-function storageError(error: unknown) {
-  const message = error instanceof Error ? error.message : "Storage request failed.";
-  return Response.json({ error: message, code: "STORAGE_UNAVAILABLE" }, { status: 503 });
+async function claimLegacyDocuments(database: D1Database, ownerId: string) {
+  await database.prepare("UPDATE documents SET owner_id = ? WHERE owner_id IS NULL").bind(ownerId).run();
+}
+
+function storageError(context: ApiContext, error: unknown) {
+  return apiError(context, error, "Document storage is temporarily unavailable.", "STORAGE_UNAVAILABLE");
 }
