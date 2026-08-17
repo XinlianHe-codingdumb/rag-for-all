@@ -29,16 +29,17 @@ export async function POST(request: Request) {
 
   const startedAt = Date.now();
   const candidateText = candidates.map((item) => `CHUNK ${item.id}\n${item.text}`).join("\n\n---\n\n");
-    const usageReservation = await reserveModelUsage(authorization, Math.ceil((question.length + candidateText.length) / 4) + 1_200, "rerank");
+    const usageReservation = await reserveModelUsage(authorization, Math.ceil((question.length + candidateText.length) / 4) + 800, "rerank");
     if (usageReservation instanceof Response) return usageReservation;
     const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: config.responseModel,
-      instructions: "You are the second-stage reranker in a RAG pipeline. Judge whether each candidate passage directly helps answer the complete question. Return only strict JSON in this exact shape: {\"results\":[{\"id\":1,\"score\":87,\"reason\":\"Short plain-English reason\"}]}. Include every supplied chunk exactly once. Scores are integers from 0 to 100. Prefer direct answer-bearing evidence over passages that merely share words.",
+      instructions: "You are the second-stage reranker in a RAG pipeline. Judge whether each candidate passage directly helps answer the complete question. Return only strict JSON in this exact shape: {\"results\":[{\"id\":1,\"score\":87,\"reason\":\"Short plain-English reason\"}]}. Include every supplied chunk exactly once. Scores are integers from 0 to 100. Keep each reason to 12 words or fewer. Prefer direct answer-bearing evidence over passages that merely share words.",
       input: `QUESTION\n${question}\n\nCANDIDATES\n${candidateText}`,
-      max_output_tokens: 1_200,
+      max_output_tokens: 800,
+      reasoning: { effort: "none" },
       store: false,
       text: { verbosity: "low" },
     }),

@@ -55,6 +55,8 @@ Do not commit API keys. Copy `.env.example` to `.env.local`, add your key there,
 OPENAI_API_KEY=your-key-here
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 OPENAI_RESPONSE_MODEL=gpt-5.6-luna
+MODEL_DAILY_USER_TOKEN_BUDGET=250000
+MODEL_DAILY_SITE_TOKEN_BUDGET=1000000
 ADMIN_OWNER_ID=your-sites-owner-id
 ADMIN_OWNER_EMAIL=your-owner-account@example.com
 ANALYTICS_HASH_SALT=a-long-random-secret

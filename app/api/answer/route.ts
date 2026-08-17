@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     if (question.length > 4_000 || context.length > 120_000) {
       return apiJson(authorization, { error: "The question or retrieved context exceeds the current safety limit." }, { status: 400 });
     }
-    const usageReservation = await reserveModelUsage(authorization, Math.ceil((question.length + context.length) / 4) + 700, "answer");
+    const usageReservation = await reserveModelUsage(authorization, Math.ceil((question.length + context.length) / 4) + 450, "answer");
     if (usageReservation instanceof Response) return usageReservation;
 
     const startedAt = Date.now();
@@ -36,7 +36,8 @@ export async function POST(request: Request) {
       model: config.responseModel,
       instructions: "Answer only from the provided RAG context. Cite supporting chunk IDs in square brackets. If evidence is insufficient, state what is missing. Be concise and plain-spoken.",
       input: `CONTEXT\n${context}\n\nQUESTION\n${question}`,
-      max_output_tokens: 700,
+      max_output_tokens: 450,
+      reasoning: { effort: "none" },
       store: false,
       text: { verbosity: "low" },
     }),

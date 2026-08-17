@@ -124,8 +124,8 @@ export function getLaunchPolicy() {
   const processEnvironment = typeof process !== "undefined" ? process.env : {};
   return {
     retentionDays: positiveInteger(bindings.DATA_RETENTION_DAYS || processEnvironment.DATA_RETENTION_DAYS, 7),
-    userDailyTokenBudget: positiveInteger(bindings.MODEL_DAILY_USER_TOKEN_BUDGET || processEnvironment.MODEL_DAILY_USER_TOKEN_BUDGET, 1_000_000),
-    siteDailyTokenBudget: positiveInteger(bindings.MODEL_DAILY_SITE_TOKEN_BUDGET || processEnvironment.MODEL_DAILY_SITE_TOKEN_BUDGET, 5_000_000),
+    userDailyTokenBudget: positiveInteger(bindings.MODEL_DAILY_USER_TOKEN_BUDGET || processEnvironment.MODEL_DAILY_USER_TOKEN_BUDGET, 250_000),
+    siteDailyTokenBudget: positiveInteger(bindings.MODEL_DAILY_SITE_TOKEN_BUDGET || processEnvironment.MODEL_DAILY_SITE_TOKEN_BUDGET, 1_000_000),
   };
 }
 
