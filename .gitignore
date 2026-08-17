@@ -37,6 +37,8 @@ yarn-error.log*
 
 /dist/
 /.wrangler/
+/.sites/
 /outputs/
 /work/
 /tmp/
+*.tgz
