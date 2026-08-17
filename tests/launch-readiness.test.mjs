@@ -61,10 +61,11 @@ test("publishes public-beta privacy, analytics, retention, and terms in plain En
 });
 
 test("allows only privacy-safe analytics fields and protects owner controls", async () => {
-  const [events, adminRoute, adminAuth, schema, studio] = await Promise.all([
+  const [events, adminRoute, adminAuth, adminPage, schema, studio] = await Promise.all([
     read("../app/api/events/route.ts"),
     read("../app/api/admin/analytics/route.ts"),
     read("../app/lib/admin-auth.ts"),
+    read("../app/admin/page.tsx"),
     read("../db/schema.ts"),
     read("../app/rag-studio.tsx"),
   ]);
@@ -73,7 +74,10 @@ test("allows only privacy-safe analytics fields and protects owner controls", as
   assert.doesNotMatch(events, /"(filename|question|prompt|answer|documentText|email)"/);
   assert.match(events, /90 \* 24 \* 60 \* 60/);
   assert.match(adminAuth, /ADMIN_OWNER_ID/);
+  assert.match(adminAuth, /ADMIN_OWNER_EMAIL/);
   assert.match(adminAuth, /ADMIN_REQUIRED/);
+  assert.match(adminPage, /requireChatGPTUser\("\/admin"\)/);
+  assert.match(adminPage, /force-dynamic/);
   assert.match(adminRoute, /model_calls_enabled/);
   assert.match(adminRoute, /site_daily_token_budget/);
   assert.match(schema, /analyticsEvents/);

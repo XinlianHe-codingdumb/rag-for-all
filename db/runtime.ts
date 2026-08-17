@@ -10,6 +10,7 @@ type RuntimeBindings = {
   MODEL_DAILY_USER_TOKEN_BUDGET?: string;
   MODEL_DAILY_SITE_TOKEN_BUDGET?: string;
   ADMIN_OWNER_ID?: string;
+  ADMIN_OWNER_EMAIL?: string;
   ANALYTICS_HASH_SALT?: string;
 };
 

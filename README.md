@@ -56,6 +56,7 @@ OPENAI_API_KEY=your-key-here
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 OPENAI_RESPONSE_MODEL=gpt-5.6-luna
 ADMIN_OWNER_ID=your-sites-owner-id
+ADMIN_OWNER_EMAIL=your-owner-account@example.com
 ANALYTICS_HASH_SALT=a-long-random-secret
 ```
 
