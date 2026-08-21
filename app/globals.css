@@ -60,8 +60,8 @@ button { color: inherit; }
 }
 .app-shell .topbar-title strong { color: inherit; font-size: inherit; font-weight: 820; letter-spacing: -.025em; }
 .app-shell .topbar-title span { color: inherit; font-size: inherit; font-weight: 680; }
-.app-shell .topbar-title .topbar-brand { display: inline-flex; align-items: center; vertical-align: -.13em; gap: .02em; }
-.app-shell .topbar-title .topbar-brand img { width: 1.05em; height: 1.05em; flex: 0 0 auto; object-fit: contain; }
+.app-shell .topbar-title .topbar-brand { display: inline-flex; align-items: center; vertical-align: -.13em; gap: 0; }
+.app-shell .topbar-title .topbar-brand img { width: 1.13em; height: 1.13em; flex: 0 0 auto; margin-right: -.06em; object-fit: contain; }
 .app-shell .topbar-title .topbar-brand span { color: inherit; font-size: inherit; font-weight: inherit; letter-spacing: inherit; }
 .app-shell .topbar-title .topbar-brand .brand-ag { color: #17191d; }
 .app-shell .topbar-title .topbar-brand .brand-for-all { margin-left: .42em; color: var(--blue); font-weight: 720; letter-spacing: .015em; }
