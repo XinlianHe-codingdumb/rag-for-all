@@ -4,6 +4,6 @@
     <circle cx="9" cy="12" r="5" stroke="none"/>
     <circle cx="9" cy="31" r="5" stroke="none"/>
     <circle cx="9" cy="50" r="5" stroke="none"/>
-    <path d="M10 12H34M10 31H34M34 12C46 12 52 18 52 22C52 28 46 31 34 31M34 31L52 50" fill="none" stroke-width="8"/>
+    <path d="M10 12H34C46 12 52 18 52 23C52 29 46 33 34 33H29M34 33L52 51" fill="none" stroke-width="8"/>
   </g>
 </svg>
