@@ -1,20 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-labelledby="title">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
   <title>RAG FOR ALL</title>
-  <defs>
-    <filter id="soft-shadow" x="-30%" y="-30%" width="160%" height="160%">
-      <feDropShadow dx="0" dy="2" stdDeviation="2.4" flood-color="#2563EB" flood-opacity=".22"/>
-    </filter>
-  </defs>
-  <g fill="#2563EB" stroke="#2563EB" stroke-linecap="round" stroke-linejoin="round" filter="url(#soft-shadow)">
-    <circle cx="38" cy="30" r="10" stroke="none"/>
-    <circle cx="38" cy="61" r="10" stroke="none"/>
-    <circle cx="38" cy="92" r="10" stroke="none"/>
-    <circle cx="38" cy="123" r="10" stroke="none"/>
-    <path d="M78 31 C92 31 91 50 111 50" fill="none" stroke-width="18"/>
-    <circle cx="78" cy="31" r="10" stroke="none"/>
-    <circle cx="111" cy="50" r="10" stroke="none"/>
-    <path d="M78 78 C96 78 94 111 120 118" fill="none" stroke-width="18"/>
-    <circle cx="78" cy="78" r="10" stroke="none"/>
-    <circle cx="120" cy="118" r="10" stroke="none"/>
+  <g fill="#2563EB" stroke="#2563EB" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="9" cy="12" r="5" stroke="none"/>
+    <circle cx="9" cy="31" r="5" stroke="none"/>
+    <circle cx="9" cy="50" r="5" stroke="none"/>
+    <path d="M10 12H34M10 31H34M34 12C46 12 52 18 52 22C52 28 46 31 34 31M34 31L52 50" fill="none" stroke-width="8"/>
   </g>
 </svg>

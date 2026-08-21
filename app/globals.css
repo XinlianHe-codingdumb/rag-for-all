@@ -60,9 +60,11 @@ button { color: inherit; }
 }
 .app-shell .topbar-title strong { color: inherit; font-size: inherit; font-weight: 820; letter-spacing: -.025em; }
 .app-shell .topbar-title span { color: inherit; font-size: inherit; font-weight: 680; }
-.app-shell .topbar-title .topbar-brand { display: inline-flex; align-items: center; vertical-align: -.13em; gap: .015em; }
-.app-shell .topbar-title .topbar-brand img { width: 1em; height: 1em; flex: 0 0 auto; object-fit: contain; }
+.app-shell .topbar-title .topbar-brand { display: inline-flex; align-items: center; vertical-align: -.13em; gap: .02em; }
+.app-shell .topbar-title .topbar-brand img { width: 1.05em; height: 1.05em; flex: 0 0 auto; object-fit: contain; }
 .app-shell .topbar-title .topbar-brand span { color: inherit; font-size: inherit; font-weight: inherit; letter-spacing: inherit; }
+.app-shell .topbar-title .topbar-brand .brand-ag { color: #17191d; }
+.app-shell .topbar-title .topbar-brand .brand-for-all { margin-left: .42em; color: var(--blue); font-weight: 720; letter-spacing: .015em; }
 .topbar-links { position: absolute; right: 28px; display: flex; gap: 15px; }
 .topbar-links a { color: #747b85; font-size: 11px; font-weight: 650; text-decoration: none; }
 .topbar-links a:hover { color: var(--blue); }
@@ -569,7 +571,7 @@ select { width: 100%; border: 1px solid var(--line); border-radius: 9px; padding
   :root { --topbar-height: 72px; --type-large: 34px; --type-medium: 18px; }
   .topbar { padding: 0 15px; }
   .topbar { justify-content: flex-start; }
-  .app-shell .topbar-title span { display: none; }
+  .app-shell .topbar-title > span { display: none; }
   .topbar-links { right: 15px; }
   .app-shell .topbar-title,.app-shell .topbar-title strong,.app-shell .topbar-title span { font-size: var(--type-small); }
   .workspace { display: block; }
