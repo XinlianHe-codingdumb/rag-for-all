@@ -60,6 +60,9 @@ button { color: inherit; }
 }
 .app-shell .topbar-title strong { color: inherit; font-size: inherit; font-weight: 820; letter-spacing: -.025em; }
 .app-shell .topbar-title span { color: inherit; font-size: inherit; font-weight: 680; }
+.app-shell .topbar-title .topbar-brand { display: inline-flex; align-items: center; vertical-align: -.13em; gap: .015em; }
+.app-shell .topbar-title .topbar-brand img { width: 1em; height: 1em; flex: 0 0 auto; object-fit: contain; }
+.app-shell .topbar-title .topbar-brand span { color: inherit; font-size: inherit; font-weight: inherit; letter-spacing: inherit; }
 .topbar-links { position: absolute; right: 28px; display: flex; gap: 15px; }
 .topbar-links a { color: #747b85; font-size: 11px; font-weight: 650; text-decoration: none; }
 .topbar-links a:hover { color: var(--blue); }
