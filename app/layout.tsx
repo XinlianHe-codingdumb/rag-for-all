@@ -13,7 +13,7 @@ export const metadata: Metadata = {
   description:
     "See the evidence behind the answer, then explore every RAG hand-off from document to grounded response.",
   icons: {
-    icon: [{ url: "/favicon.svg", type: "image/svg+xml", sizes: "any" }],
+    icon: [{ url: "/brand-r.png", type: "image/png", sizes: "1254x1254" }],
   },
   manifest: "/site.webmanifest",
   openGraph: {

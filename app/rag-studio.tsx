@@ -532,7 +532,7 @@ export function RagStudio() {
   return (
     <main className="app-shell">
       <header className="topbar">
-        <p className="topbar-title"><strong className="topbar-brand"><img src="/favicon.svg" alt="" aria-hidden="true" /><span className="brand-ag">AG</span><span className="brand-for-all">FOR ALL</span></strong><span> — See How RAG Works, Step by Step.</span></p>
+        <p className="topbar-title"><strong className="topbar-brand"><img src="/brand-r.png" alt="" aria-hidden="true" /><span className="brand-ag">AG</span><span className="brand-for-all">FOR ALL</span></strong><span> — See How RAG Works, Step by Step.</span></p>
         <nav className="topbar-links" aria-label="Legal information"><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>
       </header>
 
