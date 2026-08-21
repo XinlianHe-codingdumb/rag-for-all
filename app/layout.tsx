@@ -12,6 +12,10 @@ export const metadata: Metadata = {
   title: "RAG FOR ALL — See How RAG Works, Step by Step",
   description:
     "See the evidence behind the answer, then explore every RAG hand-off from document to grounded response.",
+  icons: {
+    icon: [{ url: "/favicon.svg", type: "image/svg+xml", sizes: "any" }],
+  },
+  manifest: "/site.webmanifest",
   openGraph: {
     title: "RAG FOR ALL",
     description: "See the evidence behind the answer.",

@@ -1,0 +1,15 @@
+{
+  "name": "RAG FOR ALL",
+  "short_name": "RAG FOR ALL",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "theme_color": "#17191D",
+  "background_color": "#FFFFFF",
+  "display": "standalone"
+}
