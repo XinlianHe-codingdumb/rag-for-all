@@ -38,8 +38,15 @@ test("keeps operational logs metadata-only and adds usage protection", async () 
   assert.match(guard, /DAILY_USER_BUDGET_REACHED/);
   assert.match(guard, /DAILY_SITE_BUDGET_REACHED/);
   assert.match(guard, /MODEL_CALLS_DISABLED/);
+  assert.match(guard, /rejectCrossSiteMutation/);
+  assert.match(guard, /readJsonBody/);
+  assert.match(guard, /readMultipartBody/);
+  assert.match(guard, /request\.body\.getReader\(\)/);
+  assert.match(guard, /REQUEST_TOO_LARGE/);
   assert.match(worker, /X-Content-Type-Options/);
   assert.match(worker, /Permissions-Policy/);
+  assert.match(worker, /Content-Security-Policy/);
+  assert.match(worker, /Cross-Origin-Opener-Policy/);
 });
 
 test("publishes public-beta privacy, analytics, retention, and terms in plain English", async () => {
@@ -56,6 +63,9 @@ test("publishes public-beta privacy, analytics, retention, and terms in plain En
   assert.match(privacy, /sent to the configured OpenAI API/i);
   assert.match(terms, /Upload only files you have the right to use/i);
   assert.match(documents, /cleanupExpiredDocuments/);
+  assert.match(documents, /matchesFileSignature/);
+  assert.match(documents, /sanitizeFileName/);
+  assert.match(documents, /crypto\.randomUUID\(\)/);
   assert.match(studio, /href="\/privacy"/);
   assert.match(studio, /href="\/terms"/);
 });
@@ -76,6 +86,7 @@ test("allows only privacy-safe analytics fields and protects owner controls", as
   assert.match(adminAuth, /ADMIN_OWNER_ID/);
   assert.match(adminAuth, /ADMIN_OWNER_EMAIL/);
   assert.match(adminAuth, /ADMIN_REQUIRED/);
+  assert.match(adminAuth, /idMatches && emailMatches/);
   assert.match(adminPage, /requireChatGPTUser\("\/admin"\)/);
   assert.match(adminPage, /force-dynamic/);
   assert.match(adminRoute, /model_calls_enabled/);

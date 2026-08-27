@@ -341,7 +341,8 @@ export function RagStudio() {
         form.set("parsed", JSON.stringify(parsed));
         const response = await fetch("/api/documents", { method: "POST", body: form });
         if (response.ok) {
-          parsed = { ...parsed, persisted: true };
+          const body = await response.json() as { document?: { id?: string; name?: string } };
+          parsed = { ...parsed, id: body.document?.id ?? parsed.id, name: body.document?.name ?? parsed.name, persisted: true };
           setDocument(parsed);
           setNotice(`${file.name} parsed and saved privately. Delete removes the original, parsed text, and run history.`);
         }

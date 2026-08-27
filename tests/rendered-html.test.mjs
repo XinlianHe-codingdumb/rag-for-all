@@ -20,6 +20,10 @@ test("server-renders the RAG FOR ALL workspace", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
   assert.equal(response.headers.get("x-content-type-options"), "nosniff");
   assert.equal(response.headers.get("x-frame-options"), "DENY");
+  assert.equal(response.headers.get("cross-origin-opener-policy"), "same-origin");
+  assert.equal(response.headers.get("cross-origin-resource-policy"), "same-origin");
+  assert.match(response.headers.get("content-security-policy") ?? "", /frame-ancestors 'none'/);
+  assert.match(response.headers.get("content-security-policy") ?? "", /object-src 'none'/);
 
   const html = await response.text();
   assert.match(html, /<title>RAG FOR ALL/);
@@ -60,6 +64,19 @@ test("server-renders the RAG FOR ALL workspace", async () => {
   assert.match(html, /Northstar Handbook/);
   assert.doesNotMatch(html, /codex-preview/);
   assert.doesNotMatch(html, /react-loading-skeleton/);
+});
+
+test("redirects non-local HTTP traffic to HTTPS", async () => {
+  const workerUrl = new URL("../dist/server/index.js", import.meta.url);
+  workerUrl.searchParams.set("test", `https-${process.pid}-${Date.now()}`);
+  const { default: worker } = await import(workerUrl.href);
+  const response = await worker.fetch(
+    new Request("http://ragforall.com/"),
+    { ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) } },
+    { waitUntil() {}, passThroughOnException() {} },
+  );
+  assert.equal(response.status, 308);
+  assert.equal(response.headers.get("location"), "https://ragforall.com/");
 });
 
 test("renders route-specific legal metadata without the homepage social image", async () => {

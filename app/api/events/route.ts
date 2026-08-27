@@ -1,4 +1,4 @@
-import { apiError, apiJson, beginApiRequest } from "../../lib/api-guard";
+import { apiError, apiJson, beginApiRequest, readJsonBody } from "../../lib/api-guard";
 import { ensureStorageSchema, getRuntimeBindings } from "../../../db/runtime";
 
 const EVENT_NAMES = new Set([
@@ -43,7 +43,8 @@ export async function POST(request: Request) {
   if (context instanceof Response) return context;
 
   try {
-    const input = await request.json() as Record<string, unknown>;
+    const input = await readJsonBody<Record<string, unknown>>(request, context, 4_096);
+    if (input instanceof Response) return input;
     const eventName = typeof input.name === "string" ? input.name : "";
     if (!EVENT_NAMES.has(eventName)) {
       return apiJson(context, { error: "Unknown analytics event.", code: "INVALID_EVENT", requestId: context.requestId }, { status: 400 });
@@ -62,7 +63,7 @@ export async function POST(request: Request) {
       .bind(crypto.randomUUID(), context.actorHash, eventName, section, path, JSON.stringify(properties), now)
       .run();
 
-    if (Math.random() < 0.02) {
+    if (eventName === "page_view") {
       await DB.prepare("DELETE FROM analytics_events WHERE created_at < ?")
         .bind(now - 90 * 24 * 60 * 60 * 1_000)
         .run();

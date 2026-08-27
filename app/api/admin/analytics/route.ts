@@ -1,9 +1,12 @@
 import { requireAdmin } from "../../../lib/admin-auth";
+import { apiError, apiJson, beginApiRequest, readJsonBody } from "../../../lib/api-guard";
 import { ensureStorageSchema, getEffectiveLaunchPolicy, getRuntimeBindings } from "../../../../db/runtime";
 
 type CountRow = { label: string; count: number };
 
 export async function GET(request: Request) {
+  const context = await beginApiRequest(request, "admin.analytics.read", { bucket: "admin_read", limit: 120 });
+  if (context instanceof Response) return context;
   const authorization = requireAdmin(request);
   if (authorization instanceof Response) return authorization;
 
@@ -35,7 +38,7 @@ export async function GET(request: Request) {
       getEffectiveLaunchPolicy(DB),
     ]);
 
-    return Response.json({
+    return apiJson(context, {
       periodDays: 30,
       summary: {
         events: Number(summary?.event_count ?? 0),
@@ -56,19 +59,21 @@ export async function GET(request: Request) {
         userDailyTokenBudget: policy.userDailyTokenBudget,
         siteDailyTokenBudget: policy.siteDailyTokenBudget,
       },
-    }, { headers: { "Cache-Control": "no-store" } });
+    });
   } catch (error) {
-    console.error("Admin analytics failed", error);
-    return Response.json({ error: "Dashboard data is temporarily unavailable.", code: "ADMIN_ANALYTICS_UNAVAILABLE" }, { status: 503 });
+    return apiError(context, error, "Dashboard data is temporarily unavailable.", "ADMIN_ANALYTICS_UNAVAILABLE");
   }
 }
 
 export async function PATCH(request: Request) {
+  const context = await beginApiRequest(request, "admin.settings.update", { bucket: "admin_update", limit: 30 });
+  if (context instanceof Response) return context;
   const authorization = requireAdmin(request);
   if (authorization instanceof Response) return authorization;
 
   try {
-    const input = await request.json() as Record<string, unknown>;
+    const input = await readJsonBody<Record<string, unknown>>(request, context, 4_096);
+    if (input instanceof Response) return input;
     const updates: Array<[string, string]> = [];
     if (typeof input.modelCallsEnabled === "boolean") {
       updates.push(["model_calls_enabled", String(input.modelCallsEnabled)]);
@@ -80,7 +85,7 @@ export async function PATCH(request: Request) {
       updates.push(["site_daily_token_budget", String(validateBudget(input.siteDailyTokenBudget))]);
     }
     if (!updates.length) {
-      return Response.json({ error: "No valid settings were supplied.", code: "INVALID_SETTINGS" }, { status: 400 });
+      return apiJson(context, { error: "No valid settings were supplied.", code: "INVALID_SETTINGS" }, { status: 400 });
     }
 
     const { DB } = getRuntimeBindings();
@@ -91,17 +96,17 @@ export async function PATCH(request: Request) {
       VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`)
       .bind(key, value, now)));
     const policy = await getEffectiveLaunchPolicy(DB);
-    return Response.json({
+    return apiJson(context, {
       saved: true,
       settings: {
         modelCallsEnabled: policy.modelCallsEnabled,
         userDailyTokenBudget: policy.userDailyTokenBudget,
         siteDailyTokenBudget: policy.siteDailyTokenBudget,
       },
-    }, { headers: { "Cache-Control": "no-store" } });
+    });
   } catch (error) {
     const message = error instanceof RangeError ? error.message : "Settings could not be saved.";
-    return Response.json({ error: message, code: "INVALID_SETTINGS" }, { status: error instanceof RangeError ? 400 : 503 });
+    return apiJson(context, { error: message, code: "INVALID_SETTINGS" }, { status: error instanceof RangeError ? 400 : 503 });
   }
 }
 

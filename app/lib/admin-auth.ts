@@ -10,14 +10,15 @@ export function requireAdmin(request: Request): { ownerId: string } | Response {
 
   const hostname = new URL(request.url).hostname;
   const isLoopback = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
-  if (isLoopback) {
+  const environment = typeof process !== "undefined" ? process.env.NODE_ENV : undefined;
+  if (isLoopback && environment === "development") {
     return { ownerId: configuredOwnerId || "local-development-owner" };
   }
 
-  if (
-    (configuredOwnerEmail && authenticatedEmail === configuredOwnerEmail) ||
-    (configuredOwnerId && authenticatedUserId === configuredOwnerId)
-  ) {
+  const hasConfiguredOwner = Boolean(configuredOwnerId || configuredOwnerEmail);
+  const idMatches = !configuredOwnerId || authenticatedUserId === configuredOwnerId;
+  const emailMatches = !configuredOwnerEmail || authenticatedEmail === configuredOwnerEmail;
+  if (hasConfiguredOwner && idMatches && emailMatches) {
     return { ownerId: authenticatedUserId || configuredOwnerId };
   }
 

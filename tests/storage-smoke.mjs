@@ -3,7 +3,7 @@ import { File } from "node:buffer";
 import { readFile } from "node:fs/promises";
 
 const baseUrl = process.env.RAG_FOR_ALL_URL ?? "http://localhost:3000";
-const id = `storage-smoke-${Date.now()}`;
+let id = crypto.randomUUID();
 const bytes = await readFile(new URL("./fixtures/northstar-handbook.pdf", import.meta.url));
 const file = new File([bytes], "northstar-handbook.pdf", { type: "application/pdf" });
 const parsed = {
@@ -24,7 +24,9 @@ try {
   form.set("file", file);
   form.set("parsed", JSON.stringify(parsed));
   const createResponse = await fetch(`${baseUrl}/api/documents`, { method: "POST", body: form });
-  assert.equal(createResponse.status, 201, await createResponse.text());
+  const createdDocument = await createResponse.json();
+  assert.equal(createResponse.status, 201, JSON.stringify(createdDocument));
+  id = createdDocument.document.id;
   created = true;
 
   const listResponse = await fetch(`${baseUrl}/api/documents`);

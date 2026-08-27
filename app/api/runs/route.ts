@@ -1,8 +1,8 @@
 import { ensureStorageSchema, requireStorageBindings } from "../../../db/runtime";
-import { apiError, apiJson, beginApiRequest } from "../../lib/api-guard";
+import { apiError, apiJson, beginApiRequest, readJsonBody } from "../../lib/api-guard";
 
 export async function GET(request: Request) {
-  const authorization = await beginApiRequest(request, "runs.list");
+  const authorization = await beginApiRequest(request, "runs.list", { bucket: "run_history_read", limit: 120 });
   if (authorization instanceof Response) return authorization;
   try {
     const { DB } = requireStorageBindings();
@@ -24,16 +24,21 @@ export async function POST(request: Request) {
   try {
     const { DB } = requireStorageBindings();
     await ensureStorageSchema(DB);
-    const payload = await request.json() as {
+    const payload = await readJsonBody<{
       documentId?: string;
       experiment?: string;
       query?: string;
       config?: unknown;
       result?: unknown;
-    };
-    if (!payload.documentId || !payload.experiment || !payload.query) {
+    }>(request, authorization, 128_000);
+    if (payload instanceof Response) return payload;
+    if (!payload.documentId || !["A", "B"].includes(payload.experiment) || !payload.query) {
       return apiJson(authorization, { error: "documentId, experiment, and query are required." }, { status: 400 });
     }
+    if (payload.query.length > 4_000) return apiJson(authorization, { error: "The query exceeds the current safety limit." }, { status: 400 });
+    const configJson = JSON.stringify(payload.config ?? {});
+    const resultJson = JSON.stringify(payload.result ?? {});
+    if (configJson.length > 16_000 || resultJson.length > 96_000) return apiJson(authorization, { error: "The run data exceeds the current safety limit." }, { status: 413 });
     const ownedDocument = await DB.prepare("SELECT id FROM documents WHERE id = ? AND owner_id = ?")
       .bind(payload.documentId, authorization.userId).first<{ id: string }>();
     if (!ownedDocument) return apiJson(authorization, { error: "Document not found." }, { status: 404 });
@@ -42,7 +47,7 @@ export async function POST(request: Request) {
     await DB.prepare(`INSERT INTO pipeline_runs
       (id, document_id, experiment, query, config_json, result_json, owner_id, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-      .bind(id, payload.documentId, payload.experiment, payload.query, JSON.stringify(payload.config ?? {}), JSON.stringify(payload.result ?? {}), authorization.userId, createdAt)
+      .bind(id, payload.documentId, payload.experiment, payload.query, configJson, resultJson, authorization.userId, createdAt)
       .run();
     return apiJson(authorization, { run: { id, createdAt } }, { status: 201 });
   } catch (error) {

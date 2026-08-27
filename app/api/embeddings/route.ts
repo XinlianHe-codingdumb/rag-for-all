@@ -1,5 +1,5 @@
 import { getOpenAIConfig } from "../../../db/runtime";
-import { apiError, apiJson, beginApiRequest, recordModelUsage, reserveModelUsage } from "../../lib/api-guard";
+import { apiError, apiJson, beginApiRequest, readJsonBody, recordModelUsage, reserveModelUsage } from "../../lib/api-guard";
 
 const MAX_TEXTS = 100;
 const MAX_CHARACTERS_PER_TEXT = 30_000;
@@ -17,7 +17,8 @@ export async function POST(request: Request) {
   }
 
   try {
-    const payload = (await request.json()) as { texts?: unknown };
+    const payload = await readJsonBody<{ texts?: unknown }>(request, authorization, 3_100_000);
+    if (payload instanceof Response) return payload;
     if (!Array.isArray(payload.texts) || !payload.texts.length || payload.texts.length > MAX_TEXTS) {
       return apiJson(authorization, { error: `texts must contain 1-${MAX_TEXTS} strings.` }, { status: 400 });
     }
@@ -43,7 +44,7 @@ export async function POST(request: Request) {
     error?: { message?: string };
   };
     if (!response.ok || !body.data) {
-      return apiJson(authorization, { error: body.error?.message || "Embedding request failed." }, { status: response.status || 502 }, { provider: "openai" });
+      return apiJson(authorization, { error: "Embedding request failed.", code: "PROVIDER_ERROR", requestId: authorization.requestId }, { status: response.status || 502 }, { provider: "openai" });
     }
     const vectors = [...body.data].sort((a, b) => a.index - b.index).map((item) => item.embedding);
     const inputTokens = body.usage?.total_tokens ?? 0;

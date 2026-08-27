@@ -2,6 +2,9 @@ import { ensureStorageSchema, getEffectiveLaunchPolicy, getRuntimeBindings } fro
 
 const SESSION_COOKIE = "rfa_session";
 const SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60;
+const JSON_CONTENT_TYPE = /^application\/json(?:\s*;|$)/i;
+const MULTIPART_CONTENT_TYPE = /^multipart\/form-data\s*;.*\bboundary=/i;
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 type RateLimitOptions = {
   bucket: string;
@@ -39,8 +42,10 @@ export async function beginApiRequest(
   route: string,
   rateLimit?: RateLimitOptions,
 ): Promise<ApiContext | Response> {
-  const requestId = request.headers.get("cf-ray") || request.headers.get("x-request-id") || crypto.randomUUID();
+  const requestId = safeRequestId(request.headers.get("cf-ray")) || safeRequestId(request.headers.get("x-request-id")) || crypto.randomUUID();
   const startedAt = Date.now();
+  const crossSiteResponse = rejectCrossSiteMutation(request, requestId);
+  if (crossSiteResponse) return crossSiteResponse;
   const identity = requestIdentity(request);
   const actorHash = await shortHash(identity.userId);
   const ipHash = await requestIpHash(request);
@@ -104,6 +109,71 @@ export async function beginApiRequest(
       { error: "Usage protection is temporarily unavailable.", code: "RATE_LIMIT_UNAVAILABLE", requestId },
       { status: 503, headers: responseHeaders(requestId, undefined, context.setCookie) },
     );
+  }
+}
+
+export async function readJsonBody<T>(request: Request, context: ApiContext, maxBytes = 256_000): Promise<T | Response> {
+  if (!JSON_CONTENT_TYPE.test(request.headers.get("content-type") || "")) {
+    return apiJson(context, { error: "Content-Type must be application/json.", code: "INVALID_CONTENT_TYPE", requestId: context.requestId }, { status: 415 });
+  }
+  const declaredLength = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    return apiJson(context, { error: "The request body is too large.", code: "REQUEST_TOO_LARGE", requestId: context.requestId }, { status: 413 });
+  }
+  const raw = await request.text();
+  if (new TextEncoder().encode(raw).byteLength > maxBytes) {
+    return apiJson(context, { error: "The request body is too large.", code: "REQUEST_TOO_LARGE", requestId: context.requestId }, { status: 413 });
+  }
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return apiJson(context, { error: "The request body is not valid JSON.", code: "INVALID_JSON", requestId: context.requestId }, { status: 400 });
+  }
+}
+
+export function rejectDeclaredBodySize(request: Request, context: ApiContext, maxBytes: number) {
+  const declaredLength = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    return apiJson(context, { error: "The request body is too large.", code: "REQUEST_TOO_LARGE", requestId: context.requestId }, { status: 413 });
+  }
+  return null;
+}
+
+export async function readMultipartBody(request: Request, context: ApiContext, maxBytes: number): Promise<FormData | Response> {
+  const contentType = request.headers.get("content-type") || "";
+  if (!MULTIPART_CONTENT_TYPE.test(contentType)) {
+    return apiJson(context, { error: "Content-Type must be multipart/form-data.", code: "INVALID_CONTENT_TYPE", requestId: context.requestId }, { status: 415 });
+  }
+  const declaredRejection = rejectDeclaredBodySize(request, context, maxBytes);
+  if (declaredRejection) return declaredRejection;
+  if (!request.body) {
+    return apiJson(context, { error: "The request body is empty.", code: "EMPTY_BODY", requestId: context.requestId }, { status: 400 });
+  }
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    totalBytes += value.byteLength;
+    if (totalBytes > maxBytes) {
+      await reader.cancel();
+      return apiJson(context, { error: "The request body is too large.", code: "REQUEST_TOO_LARGE", requestId: context.requestId }, { status: 413 });
+    }
+    chunks.push(value);
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return await new Response(bytes.buffer, { headers: { "Content-Type": contentType } }).formData();
+  } catch {
+    return apiJson(context, { error: "The multipart request is invalid.", code: "INVALID_MULTIPART", requestId: context.requestId }, { status: 400 });
   }
 }
 
@@ -237,13 +307,31 @@ function requestIdentity(request: Request): { userId: string; kind: ApiContext["
   }
 
   const existingSession = readCookie(request.headers.get("cookie"), SESSION_COOKIE);
-  if (existingSession && /^[a-f0-9-]{20,64}$/i.test(existingSession)) {
+  if (existingSession && UUID_V4.test(existingSession)) {
     return { userId: `anon:${existingSession}`, kind: "anonymous" };
   }
   const sessionId = crypto.randomUUID();
   const isSecure = new URL(request.url).protocol === "https:";
   const setCookie = `${SESSION_COOKIE}=${sessionId}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_MAX_AGE_SECONDS}${isSecure ? "; Secure" : ""}`;
   return { userId: `anon:${sessionId}`, kind: "anonymous", setCookie };
+}
+
+function rejectCrossSiteMutation(request: Request, requestId: string) {
+  if (["GET", "HEAD", "OPTIONS"].includes(request.method.toUpperCase())) return null;
+  const fetchSite = request.headers.get("sec-fetch-site");
+  const origin = request.headers.get("origin");
+  const requestOrigin = new URL(request.url).origin;
+  if (fetchSite === "cross-site" || (origin && origin !== requestOrigin)) {
+    return Response.json(
+      { error: "Cross-site requests are not allowed.", code: "CROSS_SITE_REQUEST", requestId },
+      { status: 403, headers: responseHeaders(requestId) },
+    );
+  }
+  return null;
+}
+
+function safeRequestId(value: string | null) {
+  return value && /^[A-Za-z0-9_.:-]{1,80}$/.test(value) ? value : "";
 }
 
 async function requestIpHash(request: Request) {
