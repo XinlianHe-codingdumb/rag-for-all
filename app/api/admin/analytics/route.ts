@@ -14,24 +14,36 @@ export async function GET(request: Request) {
     const { DB } = getRuntimeBindings();
     if (!DB) throw new Error("D1 is unavailable for the admin dashboard.");
     await ensureStorageSchema(DB);
+    const requestedRange = Number(new URL(request.url).searchParams.get("range") ?? 30);
+    const periodDays = [1, 7, 30].includes(requestedRange) ? requestedRange : 30;
     const now = Date.now();
-    const since = now - 30 * 24 * 60 * 60 * 1_000;
-    const dailySince = now - 14 * 24 * 60 * 60 * 1_000;
+    const since = now - periodDays * 24 * 60 * 60 * 1_000;
+    const dailySince = now - Math.min(periodDays, 14) * 24 * 60 * 60 * 1_000;
     const day = new Date(now).toISOString().slice(0, 10);
 
-    const [summary, events, sections, funnel, daily, usage, policy] = await Promise.all([
+    const [summary, events, steps, pages, llmCalls, funnel, daily, usage, policy] = await Promise.all([
       DB.prepare(`SELECT COUNT(*) AS event_count, COUNT(DISTINCT session_id) AS session_count
         FROM analytics_events WHERE created_at >= ?`).bind(since).first<{ event_count: number; session_count: number }>(),
       DB.prepare(`SELECT event_name AS label, COUNT(*) AS count FROM analytics_events
         WHERE created_at >= ? GROUP BY event_name ORDER BY count DESC`).bind(since).all<CountRow>(),
       DB.prepare(`SELECT COALESCE(section, 'unknown') AS label, COUNT(*) AS count FROM analytics_events
-        WHERE created_at >= ? AND event_name IN ('section_view', 'pipeline_step_click', 'journey_choice', 'concept_card_view')
+        WHERE created_at >= ? AND event_name = 'pipeline_step_click'
         GROUP BY section ORDER BY count DESC`).bind(since).all<CountRow>(),
+      DB.prepare(`SELECT path AS label, COUNT(*) AS count FROM analytics_events
+        WHERE created_at >= ? AND event_name = 'page_view'
+        GROUP BY path ORDER BY count DESC`).bind(since).all<CountRow>(),
+      DB.prepare(`SELECT COALESCE(json_extract(properties_json, '$.source'), 'unknown') AS label,
+        COALESCE(json_extract(properties_json, '$.status'), 'unknown') AS status,
+        COUNT(*) AS count FROM analytics_events
+        WHERE created_at >= ? AND event_name = 'llm_call'
+        GROUP BY label, status ORDER BY count DESC`).bind(since).all<CountRow & { status: string }>(),
       DB.prepare(`SELECT event_name AS label, COUNT(DISTINCT session_id) AS count FROM analytics_events
-        WHERE created_at >= ? AND event_name IN ('page_view', 'upload_completed', 'pipeline_run', 'answer_generated', 'comparison_viewed')
+        WHERE created_at >= ? AND event_name IN ('page_view', 'upload_completed', 'stage_run', 'answer_generated', 'comparison_viewed')
         GROUP BY event_name`).bind(since).all<CountRow>(),
       DB.prepare(`SELECT strftime('%Y-%m-%d', created_at / 1000, 'unixepoch') AS day,
-        COUNT(*) AS events, COUNT(DISTINCT session_id) AS sessions
+        COUNT(*) AS events, COUNT(DISTINCT session_id) AS sessions,
+        SUM(CASE WHEN event_name = 'pipeline_step_click' THEN 1 ELSE 0 END) AS step_opens,
+        SUM(CASE WHEN event_name = 'llm_call' THEN 1 ELSE 0 END) AS llm_calls
         FROM analytics_events WHERE created_at >= ? GROUP BY day ORDER BY day`).bind(dailySince).all<{ day: string; events: number; sessions: number }>(),
       DB.prepare(`SELECT reserved_tokens, actual_tokens, request_count FROM model_usage_daily
         WHERE id = ?`).bind(`site:${day}`).first<{ reserved_tokens: number; actual_tokens: number; request_count: number }>(),
@@ -39,15 +51,17 @@ export async function GET(request: Request) {
     ]);
 
     return apiJson(context, {
-      periodDays: 30,
+      periodDays,
       summary: {
         events: Number(summary?.event_count ?? 0),
         sessions: Number(summary?.session_count ?? 0),
       },
       events: normalizeCounts(events.results),
-      sections: normalizeCounts(sections.results),
+      steps: normalizeCounts(steps.results),
+      pages: normalizeCounts(pages.results),
+      llmCalls: (llmCalls.results ?? []).map((row) => ({ label: `${row.label} · ${row.status}`, count: Number(row.count) })),
       funnel: normalizeCounts(funnel.results),
-      daily: (daily.results ?? []).map((row) => ({ day: row.day, events: Number(row.events), sessions: Number(row.sessions) })),
+      daily: (daily.results ?? []).map((row) => ({ day: row.day, events: Number(row.events), sessions: Number(row.sessions), stepOpens: Number((row as { step_opens?: number }).step_opens ?? 0), llmCalls: Number((row as { llm_calls?: number }).llm_calls ?? 0) })),
       usage: {
         day,
         reservedTokens: Number(usage?.reserved_tokens ?? 0),

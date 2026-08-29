@@ -11,6 +11,10 @@ const EVENT_NAMES = new Set([
   "upload_completed",
   "upload_failed",
   "pipeline_run",
+  "stage_run",
+  "stage_completed",
+  "stage_stale",
+  "llm_call",
   "setting_changed",
   "answer_generated",
   "answer_failed",
@@ -36,6 +40,7 @@ const PROPERTY_NAMES = new Set([
   "method",
   "errorCode",
   "durationBucket",
+  "feature",
 ]);
 
 export async function POST(request: Request) {

@@ -25,8 +25,10 @@ import type {
   RerankState,
 } from "./lib/rag-types";
 
-type StepKey = "overview" | "upload" | "parse" | "chunk" | "embed" | "retrieve" | "rerank" | "prompt" | "answer" | "compare";
+type StepKey = "overview" | "upload" | "ask" | "parse" | "chunk" | "embed" | "retrieve" | "rerank" | "prompt" | "answer" | "compare";
 type ExperimentName = "A" | "B";
+type RunStep = "chunk" | "embed" | "retrieve" | "rerank" | "prompt" | "answer";
+type StepState = "done" | "ready" | "stale" | "locked";
 type AnalyticsProperties = Record<string, string | number | boolean>;
 type ApiStatus = {
   openaiConfigured: boolean;
@@ -38,13 +40,14 @@ type ApiStatus = {
 
 const STEPS: Array<{ key: Exclude<StepKey, "overview">; number: string; title: string; note: string; icon: string }> = [
   { key: "upload", number: "01", title: "Document", note: "Bring the knowledge", icon: "□" },
-  { key: "parse", number: "02", title: "Parse", note: "Turn files into text", icon: "¶" },
-  { key: "chunk", number: "03", title: "Chunk", note: "Cut, but with manners", icon: "//" },
-  { key: "embed", number: "04", title: "Embedding", note: "Meaning becomes math", icon: "⠿" },
-  { key: "retrieve", number: "05", title: "Retrieve", note: "Find the useful bits", icon: "?" },
-  { key: "rerank", number: "06", title: "Rerank", note: "Put the best first", icon: "↕" },
-  { key: "prompt", number: "07", title: "Prompt", note: "Pack the context", icon: "{}" },
-  { key: "answer", number: "08", title: "Answer", note: "Let the model speak", icon: "✦" },
+  { key: "ask", number: "02", title: "Ask", note: "See AI without RAG", icon: "?" },
+  { key: "parse", number: "03", title: "Parse", note: "Turn files into text", icon: "¶" },
+  { key: "chunk", number: "04", title: "Chunk", note: "Cut, but with manners", icon: "//" },
+  { key: "embed", number: "05", title: "Embedding", note: "Meaning becomes math", icon: "⠿" },
+  { key: "retrieve", number: "06", title: "Retrieve", note: "Find the useful bits", icon: "⌕" },
+  { key: "rerank", number: "07", title: "Rerank", note: "Put the best first", icon: "↕" },
+  { key: "prompt", number: "08", title: "Prompt", note: "Pack the context", icon: "{}" },
+  { key: "answer", number: "09", title: "Answer", note: "Let the model speak", icon: "✦" },
   { key: "compare", number: "A/B", title: "Compare", note: "Receipts, not vibes", icon: "⇄" },
 ];
 
@@ -91,6 +94,7 @@ const RAG_CONCEPTS: Array<{ kicker: string; title: string; body: string; visual:
 
 const STEP_INTROS: Record<Exclude<StepKey, "overview">, string> = {
   upload: "A RAG system begins with a trusted set of documents: the knowledge the AI is allowed to use. Uploading creates that source of truth and keeps the original file, its type, and its identity connected so every later chunk, result, and citation can be traced back. The next step will turn the file into readable text; if the source is outdated, incomplete, or sensitive, every step after this inherits the problem.",
+  ask: "First, ask the model the same question without showing it your document. It can only rely on generic training knowledge and the wording of your question, so it cannot know the private facts you just uploaded. This is the gap RAG closes: the model does not become smarter in general; it finally gets the evidence that belongs to your question.",
   parse: "Parsing converts a PDF, DOCX, or text file into machine-readable text and metadata. It tries to preserve pages, headings, paragraphs, lists, and tables because the AI cannot retrieve information the parser failed to recover. The uploaded file becomes clean input for chunking, while scanned pages may require OCR and complex layouts should be checked before the knowledge is indexed.",
   chunk: "Chunking divides the parsed document into passages small enough to search and send to an LLM. Smaller chunks can match a question precisely but may lose surrounding meaning; larger chunks keep more context but add noise and consume more prompt space. Each chunk keeps its source page, then moves to Embedding, where its meaning is represented numerically for search.",
   embed: "Embedding converts every chunk into a vector—a long list of numbers that represents patterns in its meaning. The question will be converted with the same model, allowing the system to find related ideas even when they use different words. Each dot below is one chunk projected from many dimensions onto a 2D map; this representation powers semantic retrieval, but the flat picture is only a guide, not the real vector space.",
@@ -146,10 +150,12 @@ export function RagStudio() {
   const [remoteRerank, setRemoteRerank] = useState<RerankState | null>(null);
   const [rerankKey, setRerankKey] = useState("");
   const [answer, setAnswer] = useState<AnswerState | null>(null);
+  const [noRagAnswer, setNoRagAnswer] = useState<AnswerState | null>(null);
+  const [noRagKey, setNoRagKey] = useState("");
+  const [completedKeys, setCompletedKeys] = useState<Record<ExperimentName, Partial<Record<RunStep, string>>>>({ A: {}, B: {} });
   const [apiStatus, setApiStatus] = useState<ApiStatus | null>(null);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
-  const [pipelineRan, setPipelineRan] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [embeddingView, setEmbeddingView] = useState({ zoom: 1, x: 0, y: 0 });
   const [selectedVectorId, setSelectedVectorId] = useState<number | null>(null);
@@ -208,10 +214,11 @@ export function RagStudio() {
   const config = experiments[activeExperiment];
   const chunks = useMemo(() => document ? createChunks(document, config) : [], [document, config]);
   const localEmbedding = useMemo(() => createLocalEmbeddings(chunks, query), [chunks, query]);
-  const currentEmbeddingKey = useMemo(
-    () => `${document?.id ?? "none"}:${activeExperiment}:${config.chunkSize}:${config.overlap}:${config.strategy}:${query}`,
-    [document, activeExperiment, config.chunkSize, config.overlap, config.strategy, query],
-  );
+  const documentKey = useMemo(() => `${document?.id ?? "none"}:${document?.parsedAt ?? "none"}:${document?.text.length ?? 0}`, [document]);
+  const askKey = `${documentKey}:${query.trim()}`;
+  const parseKey = documentKey;
+  const chunkKey = `${parseKey}:${activeExperiment}:${config.chunkSize}:${config.overlap}:${config.strategy}`;
+  const currentEmbeddingKey = `${chunkKey}:${query.trim()}`;
   const embedding = embeddingKey === currentEmbeddingKey && remoteEmbedding?.vectors.length === chunks.length
     ? remoteEmbedding
     : localEmbedding;
@@ -220,7 +227,10 @@ export function RagStudio() {
     () => rankChunks(chunks, query, config, embedding, candidateCount),
     [chunks, query, config, embedding, candidateCount],
   );
-  const currentRerankKey = `${currentEmbeddingKey}:${config.method}:${config.topK}`;
+  const retrieveKey = `${currentEmbeddingKey}:${config.method}:${config.topK}`;
+  const currentRerankKey = retrieveKey;
+  const promptKey = `${currentRerankKey}:prompt`;
+  const answerKey = `${promptKey}:answer`;
   const activeRerank = rerankKey === currentRerankKey ? remoteRerank : null;
   const finalEvidence = useMemo(
     () => rerankChunks(retrievedCandidates, query, config.topK, activeRerank?.signals),
@@ -271,13 +281,44 @@ export function RagStudio() {
       ...current,
       [activeExperiment]: { ...current[activeExperiment], ...patch },
     }));
-    setPipelineRan(false);
     setAnswer(null);
-    setRemoteRerank(null);
-    setRerankKey("");
     for (const [setting, value] of Object.entries(patch)) {
       trackEvent("setting_changed", activeStep, { setting, value: String(value), experiment: activeExperiment });
     }
+    trackEvent("stage_stale", activeStep, { experiment: activeExperiment, source: "setting_changed" });
+  };
+
+  const markStepComplete = (step: RunStep, key: string) => {
+    setCompletedKeys((current) => ({
+      ...current,
+      [activeExperiment]: { ...current[activeExperiment], [step]: key },
+    }));
+    trackEvent("stage_completed", step, { step, experiment: activeExperiment });
+  };
+
+  const stageState = (step: StepKey): StepState => {
+    if (step === "overview") return "done";
+    if (step === "upload") return document ? "done" : "ready";
+    if (step === "compare") return document ? "ready" : "locked";
+    if (step === "ask") {
+      if (!document) return "locked";
+      if (noRagKey === askKey && noRagAnswer) return "done";
+      return noRagKey ? "stale" : "ready";
+    }
+    if (step === "parse") return document ? "done" : "locked";
+    const keys = completedKeys[activeExperiment];
+    const data: Record<RunStep, { key: string; previous?: string; prerequisite: boolean }> = {
+      chunk: { key: chunkKey, previous: keys.chunk, prerequisite: Boolean(document) },
+      embed: { key: currentEmbeddingKey, previous: keys.embed, prerequisite: keys.chunk === chunkKey },
+      retrieve: { key: retrieveKey, previous: keys.retrieve, prerequisite: keys.embed === currentEmbeddingKey },
+      rerank: { key: currentRerankKey, previous: keys.rerank, prerequisite: keys.retrieve === retrieveKey },
+      prompt: { key: promptKey, previous: keys.prompt, prerequisite: keys.rerank === currentRerankKey },
+      answer: { key: answerKey, previous: keys.answer, prerequisite: keys.prompt === promptKey },
+    };
+    const details = data[step];
+    if (details.previous === details.key) return "done";
+    if (details.previous) return "stale";
+    return details.prerequisite ? "ready" : "locked";
   };
 
   const chooseFile = () => inputRef.current?.click();
@@ -322,7 +363,9 @@ export function RagStudio() {
     trackEvent("upload_started", "upload", { fileType, sizeBucket, method: "file" });
     setBusy("Reading and cleaning the document…");
     setAnswer(null);
-    setPipelineRan(false);
+    setNoRagAnswer(null);
+    setNoRagKey("");
+    setCompletedKeys({ A: {}, B: {} });
     try {
       let parsed = await parseDocumentFile(file);
       setDocument(parsed);
@@ -330,7 +373,7 @@ export function RagStudio() {
       setEmbeddingKey("");
       setRemoteRerank(null);
       setRerankKey("");
-      openStep("parse", "upload-complete");
+      openStep("ask", "upload-complete");
       setNotice(`${file.name} parsed successfully: ${parsed.pages.length} page${parsed.pages.length === 1 ? "" : "s"}, ${parsed.text.length.toLocaleString()} characters.`);
       const pageBucket = parsed.pages.length <= 5 ? "1-5" : parsed.pages.length <= 20 ? "6-20" : parsed.pages.length <= 100 ? "21-100" : "100-plus";
       trackEvent("upload_completed", "parse", { fileType, sizeBucket, pageBucket, status: "parsed" });
@@ -357,15 +400,44 @@ export function RagStudio() {
     }
   };
 
-  const runPipeline = async () => {
-    if (!document || !chunks.length) {
-      setNotice("Upload a readable document before running the pipeline.");
-      openStep("upload", "pipeline-empty");
-      return;
+  const askWithoutRag = async () => {
+    if (!document || !query.trim()) return;
+    setBusy("Asking the model without your document…");
+    setNoRagAnswer(null);
+    trackEvent("stage_run", "ask", { step: "ask", source: "user" });
+    try {
+      const response = await fetch("/api/answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: query, context: [], mode: "no_rag" }),
+      });
+      if (!response.ok) throw new Error(String(response.status));
+      const body = await response.json() as { text: string; model: string; inputTokens: number; outputTokens: number; durationMs: number };
+      setNoRagAnswer({ text: body.text, source: "OpenAI", model: body.model, inputTokens: body.inputTokens, outputTokens: body.outputTokens, durationMs: body.durationMs });
+      setNoRagKey(askKey);
+      trackEvent("llm_call", "ask", { source: "no_rag_answer", status: "completed", durationBucket: durationBucket(body.durationMs) });
+      setNotice("The model answered without your document. Now give it evidence and see what changes.");
+    } catch {
+      setNoRagAnswer({ text: "I do not have access to the document you uploaded, so I cannot verify its private facts. I can only give a generic answer from the question alone.", source: "Extractive fallback", model: "No document context", durationMs: 0 });
+      setNoRagKey(askKey);
+      trackEvent("llm_call", "ask", { source: "no_rag_answer", status: "failed", errorCode: "MODEL_FALLBACK" });
+      setNotice("The live model is unavailable, so this local reply makes the same point: without RAG, the document stays invisible.");
+    } finally {
+      setBusy(null);
     }
-    trackEvent("pipeline_run", activeStep, { experiment: activeExperiment, method: config.method, source: "user" });
-    setBusy("Embedding and retrieving the best evidence…");
-    setAnswer(null);
+  };
+
+  const runChunk = () => {
+    if (!document) return;
+    markStepComplete("chunk", chunkKey);
+    trackEvent("stage_run", "chunk", { step: "chunk", experiment: activeExperiment, source: "user" });
+    setNotice(`${chunks.length} chunks are ready for Experiment ${activeExperiment}. Changing chunk settings will make this step stale.`);
+  };
+
+  const runEmbedding = async () => {
+    if (!chunks.length || stageState("chunk") !== "done") return;
+    setBusy("Creating embeddings for this experiment…");
+    trackEvent("stage_run", "embed", { step: "embed", experiment: activeExperiment, source: "user" });
     let nextEmbedding = localEmbedding;
     try {
       const response = await fetch("/api/embeddings", {
@@ -373,53 +445,66 @@ export function RagStudio() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ texts: [query, ...chunks.map((chunk) => chunk.text)] }),
       });
-      if (response.ok) {
-        const body = await response.json() as { vectors: number[][]; model: string; inputTokens: number };
-        nextEmbedding = {
-          queryVector: body.vectors[0] ?? [],
-          vectors: body.vectors.slice(1),
-          source: "OpenAI",
-          model: body.model,
-          inputTokens: body.inputTokens,
-        };
-        setRemoteEmbedding(nextEmbedding);
-        setEmbeddingKey(currentEmbeddingKey);
-      } else {
-        setRemoteEmbedding(null);
-        setEmbeddingKey("");
-      }
+      if (!response.ok) throw new Error(String(response.status));
+      const body = await response.json() as { vectors: number[][]; model: string; inputTokens: number };
+      nextEmbedding = { queryVector: body.vectors[0] ?? [], vectors: body.vectors.slice(1), source: "OpenAI", model: body.model, inputTokens: body.inputTokens };
+      setRemoteEmbedding(nextEmbedding);
+      setEmbeddingKey(currentEmbeddingKey);
+      trackEvent("llm_call", "embed", { source: "embedding", status: "completed" });
+      setNotice(`Embedded ${chunks.length} chunks with ${body.model}.`);
     } catch {
       setRemoteEmbedding(null);
       setEmbeddingKey("");
+      trackEvent("llm_call", "embed", { source: "embedding", status: "failed", errorCode: "MODEL_FALLBACK" });
+      setNotice("The embedding API is unavailable, so this learning view uses local TF-IDF vectors instead.");
+    } finally {
+      markStepComplete("embed", currentEmbeddingKey);
+      setBusy(null);
     }
-    const nextCandidates = rankChunks(chunks, query, config, nextEmbedding, retrievalCandidateCount(config.topK, chunks.length));
+  };
+
+  const runRetrieve = () => {
+    if (stageState("embed") !== "done") return;
+    markStepComplete("retrieve", retrieveKey);
+    trackEvent("stage_run", "retrieve", { step: "retrieve", experiment: activeExperiment, method: config.method, source: "user" });
+    setNotice(`First pass found ${retrievedCandidates.length} candidates. Next, rerank the shortlist.`);
+  };
+
+  const runRerank = async () => {
+    if (stageState("retrieve") !== "done") return;
     setBusy("Reranking the candidate evidence…");
-    let rerankState: RerankState | null = null;
+    trackEvent("stage_run", "rerank", { step: "rerank", experiment: activeExperiment, method: config.method, source: "user" });
+    let nextRerank: RerankState | null = null;
     try {
       const response = await fetch("/api/rerank", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: query, candidates: nextCandidates.map((item) => ({ id: item.id, text: item.text })) }),
+        body: JSON.stringify({ question: query, candidates: retrievedCandidates.map((item) => ({ id: item.id, text: item.text })) }),
       });
-      if (response.ok) {
-        const body = await response.json() as RerankState;
-        rerankState = { ...body, source: "OpenAI" };
-        setRemoteRerank(rerankState);
-        setRerankKey(currentRerankKey);
-      } else {
-        setRemoteRerank(null);
-        setRerankKey("");
-      }
+      if (!response.ok) throw new Error(String(response.status));
+      const body = await response.json() as RerankState;
+      nextRerank = { ...body, source: "OpenAI" };
+      setRemoteRerank(nextRerank);
+      setRerankKey(currentRerankKey);
+      trackEvent("llm_call", "rerank", { source: "rerank", status: "completed", durationBucket: durationBucket(body.durationMs) });
     } catch {
       setRemoteRerank(null);
       setRerankKey("");
+      trackEvent("llm_call", "rerank", { source: "rerank", status: "failed", errorCode: "MODEL_FALLBACK" });
+    } finally {
+      const results = rerankChunks(retrievedCandidates, query, config.topK, nextRerank?.signals);
+      markStepComplete("rerank", currentRerankKey);
+      setBusy(null);
+      setNotice(`Reranked ${retrievedCandidates.length} candidates to ${results.length} evidence chunks using ${nextRerank ? "OpenAI" : "local relevance"}.`);
+      void saveRun(results, embedding);
     }
-    const nextResults = rerankChunks(nextCandidates, query, config.topK, rerankState?.signals);
-    setPipelineRan(true);
-    setBusy(null);
-    setNotice(`Experiment ${activeExperiment} retrieved ${nextCandidates.length} candidates, then reranked them to ${nextResults.length} final chunks using ${rerankState ? "OpenAI" : "a local relevance fallback"}.`);
-    trackEvent("pipeline_run", "rerank", { experiment: activeExperiment, method: config.method, status: "completed", source: rerankState ? "OpenAI" : "local" });
-    void saveRun(nextResults, nextEmbedding);
+  };
+
+  const runPrompt = () => {
+    if (stageState("rerank") !== "done") return;
+    markStepComplete("prompt", promptKey);
+    trackEvent("stage_run", "prompt", { step: "prompt", experiment: activeExperiment, source: "user" });
+    setNotice(`Prompt assembled with ${finalEvidence.length} evidence chunks. The answer model will see this exact package.`);
   };
 
   const saveRun = async (results: RerankedChunk[], usedEmbedding: EmbeddingState) => {
@@ -445,8 +530,9 @@ export function RagStudio() {
   };
 
   const generateAnswer = async () => {
-    if (!finalEvidence.length) return;
+    if (!finalEvidence.length || stageState("prompt") !== "done") return;
     setBusy("Generating a grounded answer…");
+    trackEvent("stage_run", "answer", { step: "answer", experiment: activeExperiment, source: "user" });
     const startedAt = performance.now();
     try {
       const response = await fetch("/api/answer", {
@@ -469,18 +555,22 @@ export function RagStudio() {
         });
         setNotice(`Grounded answer generated with ${body.model}. Follow the chunk citations before trusting it.`);
         trackEvent("answer_generated", "answer", { source: "OpenAI", status: "completed", durationBucket: durationBucket(body.durationMs) });
+        trackEvent("llm_call", "answer", { source: "grounded_answer", status: "completed", durationBucket: durationBucket(body.durationMs) });
       } else {
         setAnswer({ text: extractiveAnswer(query, finalEvidence), source: "Extractive fallback", model: "Local sentence selection", durationMs: Math.round(performance.now() - startedAt) });
         setNotice("OpenAI is not configured, so the answer uses retrieved sentences directly. No paid API call was made.");
         trackEvent("answer_failed", "answer", { source: "OpenAI", status: String(response.status), errorCode: "MODEL_FALLBACK" });
+        trackEvent("llm_call", "answer", { source: "grounded_answer", status: "failed", errorCode: "MODEL_FALLBACK" });
         trackEvent("answer_generated", "answer", { source: "local", status: "fallback", durationBucket: durationBucket(performance.now() - startedAt) });
       }
     } catch {
       setAnswer({ text: extractiveAnswer(query, finalEvidence), source: "Extractive fallback", model: "Local sentence selection", durationMs: Math.round(performance.now() - startedAt) });
       setNotice("The model API was unavailable, so RAG FOR ALL used a local extractive answer.");
       trackEvent("answer_failed", "answer", { source: "OpenAI", status: "unavailable", errorCode: "NETWORK_ERROR" });
+      trackEvent("llm_call", "answer", { source: "grounded_answer", status: "failed", errorCode: "NETWORK_ERROR" });
       trackEvent("answer_generated", "answer", { source: "local", status: "fallback", durationBucket: durationBucket(performance.now() - startedAt) });
     } finally {
+      markStepComplete("answer", answerKey);
       setBusy(null);
     }
   };
@@ -493,7 +583,9 @@ export function RagStudio() {
     setRemoteEmbedding(null);
     setEmbeddingKey("");
     setAnswer(null);
-    setPipelineRan(false);
+    setNoRagAnswer(null);
+    setNoRagKey("");
+    setCompletedKeys({ A: {}, B: {} });
     openStep("upload", "document-deleted");
     setNotice("Document removed from this session. Clean desk, clean vectors.");
     trackEvent("document_deleted", "upload", { source: persisted ? "storage" : "browser" });
@@ -516,18 +608,35 @@ export function RagStudio() {
     setAnswer(null);
     setRemoteEmbedding(null);
     setEmbeddingKey("");
-    setPipelineRan(false);
+    setNoRagAnswer(null);
+    setNoRagKey("");
+    setCompletedKeys({ A: {}, B: {} });
     setNotice("Sample handbook restored. It is synthetic and stays in the browser.");
-    openStep("parse", "restore-sample");
+    openStep("ask", "restore-sample");
   };
 
   const activeMeta = activeStep === "overview" ? null : STEPS.find((step) => step.key === activeStep)!;
-  const completed = (step: StepKey) => {
-    if (step === "overview") return true;
-    if (step === "upload" || step === "parse" || step === "chunk") return Boolean(document);
-    if (["embed", "retrieve", "rerank", "prompt"].includes(step)) return pipelineRan;
-    if (step === "answer") return Boolean(answer);
-    return false;
+  const stepAction = (step: StepKey) => ({
+    ask: "Ask without RAG",
+    parse: "Confirm parsed text",
+    chunk: "Build chunks",
+    embed: "Create embeddings",
+    retrieve: "Find Top-K evidence",
+    rerank: "Rerank evidence",
+    prompt: "Build prompt",
+    answer: "Generate grounded answer",
+  }[step] ?? "Choose a document");
+
+  const runActiveStep = () => {
+    if (activeStep === "ask") return void askWithoutRag();
+    if (activeStep === "parse") return setNotice("The readable text above is the parsed document. Continue to Chunk when it looks right.");
+    if (activeStep === "chunk") return runChunk();
+    if (activeStep === "embed") return void runEmbedding();
+    if (activeStep === "retrieve") return runRetrieve();
+    if (activeStep === "rerank") return void runRerank();
+    if (activeStep === "prompt") return runPrompt();
+    if (activeStep === "answer") return void generateAnswer();
+    if (activeStep === "upload") return chooseFile();
   };
 
   return (
@@ -552,10 +661,10 @@ export function RagStudio() {
             </button>
             <p className="nav-label">PIPELINE</p>
             {STEPS.map((step) => (
-              <button type="button" key={step.key} className={`nav-step ${activeStep === step.key ? "active" : ""}`} onClick={() => openStep(step.key, "sidebar")}>
+              <button type="button" key={step.key} className={`nav-step ${activeStep === step.key ? "active" : ""} state-${stageState(step.key)}`} onClick={() => openStep(step.key, "sidebar")}>
                 <span className="step-number">{step.number}</span>
                 <span className="step-copy"><strong>{step.title}</strong><small>{step.note}</small></span>
-                <span className={`step-state ${completed(step.key) ? "done" : ""}`}>{completed(step.key) ? "✓" : "·"}</span>
+                <span className={`step-state ${stageState(step.key)}`}>{stageState(step.key) === "done" ? "✓" : stageState(step.key) === "stale" ? "!" : stageState(step.key) === "ready" ? "→" : "·"}</span>
               </button>
             ))}
           </nav>
@@ -579,7 +688,7 @@ export function RagStudio() {
               <div>
                 <p className="eyebrow">STEP {activeMeta!.number} · {activeMeta!.note.toUpperCase()}</p>
                 <h1>{activeMeta!.title}</h1>
-                <p>{stepIntro(activeStep)}</p>
+                <p className="step-intro">{stepIntro(activeStep)}</p>
               </div>
               <div className="mode-switch" aria-label="Interface mode">
                 {(["Basic", "Advanced"] as const).map((item) => <button key={item} type="button" className={mode === item ? "selected" : ""} onClick={() => { setMode(item); trackEvent("setting_changed", activeStep, { setting: "interface_mode", value: item }); }}>{item}</button>)}
@@ -594,7 +703,7 @@ export function RagStudio() {
                   </button>
                 ))}
               </div>
-              <button className="run-button" type="button" onClick={() => void runPipeline()} disabled={Boolean(busy) || !document}><span>▶</span>{busy ? "Working…" : "Run pipeline"}</button>
+              {activeStep !== "compare" && <button className="run-button" type="button" onClick={runActiveStep} disabled={Boolean(busy) || stageState(activeStep) === "locked" || (!document && activeStep !== "upload")}><span>▶</span>{busy ? "Working…" : stepAction(activeStep)}</button>}
             </div>
 
             <div className="stage">
@@ -615,6 +724,13 @@ export function RagStudio() {
                   {document && <button className="delete-document-button" type="button" onClick={() => setDeleteDialogOpen(true)}><span aria-hidden="true">×</span><strong>Delete document</strong><small>Remove the file, parsed text, and experiment history</small></button>}
                   {!document && <button className="restore-sample-button" type="button" onClick={restoreSample}>Restore sample handbook</button>}
                 </div>
+              </section>
+            )}
+
+            {activeStep === "ask" && (
+              <section className="no-rag-stage">
+                <div className="no-rag-copy"><span>BEFORE RAG</span><h2>The model has your question, not your knowledge.</h2><p>Your document is safely stored beside this experiment, but it is not in the model&apos;s context yet. Ask now and compare this generic reply with the grounded answer you will create later.</p><QuestionBox query={query} setQuery={(value) => { setQuery(value); setNoRagAnswer(null); setAnswer(null); }} run={() => void askWithoutRag()} busy={Boolean(busy)} buttonLabel="Ask without RAG" /></div>
+                <article className="no-rag-answer-card"><header><span className={`preview-badge ${noRagAnswer?.source === "OpenAI" ? "live" : ""}`}>{noRagAnswer?.source ?? "NO DOCUMENT CONTEXT"}</span><strong>What the model can honestly know</strong></header><h3>{query}</h3><p>{noRagAnswer?.text ?? "Ask your question. The response will not use the document you uploaded, because RAG has not retrieved any evidence yet."}</p><footer><span>{noRagAnswer ? "Notice what is generic, uncertain, or missing." : "Your private facts are still invisible to the model."}</span><button type="button" onClick={() => openStep("parse", "no-rag-next")}>Give it evidence →</button></footer></article>
               </section>
             )}
 
@@ -688,7 +804,7 @@ export function RagStudio() {
 
             {activeStep === "retrieve" && (
               <section className="retrieval-stage">
-                <QuestionBox query={query} setQuery={(value) => { setQuery(value); setAnswer(null); setPipelineRan(false); }} run={() => void runPipeline()} busy={Boolean(busy)} buttonLabel="Find candidates" />
+                <QuestionSummary query={query} onEdit={() => openStep("ask", "retrieve-edit-question")} />
                 {config.topK > chunks.length && chunks.length > 0 && <div className="inline-warning">You asked for {config.topK}, but this document only has {chunks.length} chunks. Tiny document, tiny buffet.</div>}
                 <RetrievalMap chunks={chunks} points={embeddingPoints} queryPoint={queryPoint} candidates={retrievedCandidates} topChunks={finalEvidence} topK={config.topK} query={query} />
                 <div className="retrieval-layout">
@@ -704,7 +820,7 @@ export function RagStudio() {
 
             {activeStep === "rerank" && (
               <section className="rerank-stage">
-                <QuestionBox query={query} setQuery={(value) => { setQuery(value); setAnswer(null); setPipelineRan(false); }} run={() => void runPipeline()} busy={Boolean(busy)} buttonLabel="Run both passes" />
+                <QuestionSummary query={query} onEdit={() => openStep("ask", "rerank-edit-question")} />
                 <div className="rerank-layout">
                   <RerankFlow candidates={retrievedCandidates} finalEvidence={finalEvidence} source={activeRerank?.source ?? "Local relevance"} model={activeRerank?.model} />
                   <RetrievalControls config={config} update={updateConfig} embedding={embedding} candidateCount={candidateCount} />
@@ -723,7 +839,7 @@ export function RagStudio() {
             {activeStep === "answer" && (
               <section className="answer-stage">
                 <div className="answer-card">
-                  <div className="answer-head"><span className={`preview-badge ${answer?.source === "OpenAI" ? "live" : ""}`}>{answer?.source ?? "NOT GENERATED"}</span><button type="button" onClick={() => void generateAnswer()} disabled={Boolean(busy) || !finalEvidence.length}>{answer ? "Generate again" : "Generate grounded answer"}</button></div>
+                  <div className="answer-head"><span className={`preview-badge ${answer?.source === "OpenAI" ? "live" : ""}`}>{answer?.source ?? "NOT GENERATED"}</span><button type="button" onClick={() => void generateAnswer()} disabled={Boolean(busy) || !finalEvidence.length || stageState("prompt") !== "done"}>{answer ? "Generate again" : "Generate grounded answer"}</button></div>
                   <h2>{query}</h2>
                   <p className="answer-text">{answer?.text ?? "Generate an answer after reviewing the retrieved evidence. RAG is more trustworthy when the receipts arrive before the confidence."}</p>
                   <div className="citations">{finalEvidence.map((item) => <button type="button" key={item.id} onClick={() => { trackEvent("citation_viewed", "answer", { source: "answer", step: "rerank" }); openStep("rerank", "citation"); }}>Chunk {item.id} · {pageLabel(item.pageStart, item.pageEnd)}</button>)}</div>
@@ -977,6 +1093,10 @@ function EmptyState({ text }: { text: string }) {
 
 function QuestionBox({ query, setQuery, run, busy, buttonLabel = "Retrieve evidence" }: { query: string; setQuery: (value: string) => void; run: () => void; busy: boolean; buttonLabel?: string }) {
   return <div className="query-box"><span>YOUR QUESTION</span><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Question" /><button type="button" onClick={run} disabled={busy || !query.trim()}>{busy ? "Working…" : buttonLabel}</button></div>;
+}
+
+function QuestionSummary({ query, onEdit }: { query: string; onEdit: () => void }) {
+  return <div className="question-summary"><span>YOUR QUESTION · FROM STEP 02</span><strong>{query}</strong><button type="button" onClick={onEdit}>Edit question</button></div>;
 }
 
 function RetrievalMap({ chunks, points, queryPoint, candidates, topChunks, topK, query }: { chunks: RagChunk[]; points: Array<{ x: number; y: number }>; queryPoint: { x: number; y: number }; candidates: RankedChunk[]; topChunks: RerankedChunk[]; topK: number; query: string }) {
