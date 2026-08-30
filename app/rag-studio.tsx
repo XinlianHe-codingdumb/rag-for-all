@@ -288,6 +288,12 @@ export function RagStudio() {
     trackEvent("stage_stale", activeStep, { experiment: activeExperiment, source: "setting_changed" });
   };
 
+  const updateQuestion = (value: string) => {
+    setQuery(value);
+    setAnswer(null);
+    setNoRagAnswer(null);
+  };
+
   const markStepComplete = (step: RunStep, key: string) => {
     setCompletedKeys((current) => ({
       ...current,
@@ -729,7 +735,7 @@ export function RagStudio() {
 
             {activeStep === "ask" && (
               <section className="no-rag-stage">
-                <div className="no-rag-copy"><span>BEFORE RAG</span><h2>The model has your question, not your knowledge.</h2><p>Your document is safely stored beside this experiment, but it is not in the model&apos;s context yet. Ask now and compare this generic reply with the grounded answer you will create later.</p><QuestionBox query={query} setQuery={(value) => { setQuery(value); setNoRagAnswer(null); setAnswer(null); }} run={() => void askWithoutRag()} busy={Boolean(busy)} buttonLabel="Ask without RAG" /></div>
+                <div className="no-rag-copy"><span>BEFORE RAG</span><h2>The model has your question, not your knowledge.</h2><p>Your document is safely stored beside this experiment, but it is not in the model&apos;s context yet. Ask now and compare this generic reply with the grounded answer you will create later.</p><QuestionBox query={query} setQuery={updateQuestion} run={() => void askWithoutRag()} busy={Boolean(busy)} buttonLabel="Ask without RAG" /></div>
                 <article className="no-rag-answer-card"><header><span className={`preview-badge ${noRagAnswer?.source === "OpenAI" ? "live" : ""}`}>{noRagAnswer?.source ?? "NO DOCUMENT CONTEXT"}</span><strong>What the model can honestly know</strong></header><h3>{query}</h3><p>{noRagAnswer?.text ?? "Ask your question. The response will not use the document you uploaded, because RAG has not retrieved any evidence yet."}</p><footer><span>{noRagAnswer ? "Notice what is generic, uncertain, or missing." : "Your private facts are still invisible to the model."}</span><button type="button" onClick={() => openStep("parse", "no-rag-next")}>Give it evidence →</button></footer></article>
               </section>
             )}
@@ -804,7 +810,7 @@ export function RagStudio() {
 
             {activeStep === "retrieve" && (
               <section className="retrieval-stage">
-                <QuestionSummary query={query} onEdit={() => openStep("ask", "retrieve-edit-question")} />
+                <QuestionSummary query={query} setQuery={updateQuestion} />
                 {config.topK > chunks.length && chunks.length > 0 && <div className="inline-warning">You asked for {config.topK}, but this document only has {chunks.length} chunks. Tiny document, tiny buffet.</div>}
                 <RetrievalMap chunks={chunks} points={embeddingPoints} queryPoint={queryPoint} candidates={retrievedCandidates} topChunks={finalEvidence} topK={config.topK} query={query} />
                 <div className="retrieval-layout">
@@ -820,7 +826,7 @@ export function RagStudio() {
 
             {activeStep === "rerank" && (
               <section className="rerank-stage">
-                <QuestionSummary query={query} onEdit={() => openStep("ask", "rerank-edit-question")} />
+                <QuestionSummary query={query} setQuery={updateQuestion} />
                 <div className="rerank-layout">
                   <RerankFlow candidates={retrievedCandidates} finalEvidence={finalEvidence} source={activeRerank?.source ?? "Local relevance"} model={activeRerank?.model} />
                   <RetrievalControls config={config} update={updateConfig} embedding={embedding} candidateCount={candidateCount} />
@@ -830,6 +836,7 @@ export function RagStudio() {
 
             {activeStep === "prompt" && (
               <section className="prompt-stage">
+                <QuestionSummary query={query} setQuery={updateQuestion} />
                 <div className="prompt-toolbar"><div><span>FINAL PAYLOAD</span><h2>This is what the answer model will actually see.</h2></div><button type="button" onClick={() => void navigator.clipboard?.writeText(prompt)}>Copy prompt</button></div>
                 <pre>{prompt}</pre>
                 <div className="prompt-stats"><Stat label="Context chunks" value={finalEvidence.length.toString()} /><Stat label="Exact prompt tokens" value={countTextTokens(prompt).toLocaleString()} /><Stat label="Reranker" value={activeRerank?.source ?? "Local relevance"} accent={Boolean(activeRerank)} /></div>
@@ -837,7 +844,7 @@ export function RagStudio() {
             )}
 
             {activeStep === "answer" && (
-              <section className="answer-stage">
+              <><QuestionSummary query={query} setQuery={updateQuestion} /><section className="answer-stage">
                 <div className="answer-card">
                   <div className="answer-head"><span className={`preview-badge ${answer?.source === "OpenAI" ? "live" : ""}`}>{answer?.source ?? "NOT GENERATED"}</span><button type="button" onClick={() => void generateAnswer()} disabled={Boolean(busy) || !finalEvidence.length || stageState("prompt") !== "done"}>{answer ? "Generate again" : "Generate grounded answer"}</button></div>
                   <h2>{query}</h2>
@@ -851,7 +858,7 @@ export function RagStudio() {
                   <Stat label="Latency" value={answer ? `${answer.durationMs.toLocaleString()} ms` : "—"} />
                   <div className="plain-tip"><strong>Trust, then verify.</strong><p>Click every cited chunk. A polished sentence is not evidence wearing a nice shirt.</p></div>
                 </div>
-              </section>
+              </section></>
             )}
 
             {activeStep === "compare" && (
@@ -869,7 +876,7 @@ export function RagStudio() {
                   <SettingDelta label="Search" before={experiments.A.method} after={experiments.B.method} />
                   <SettingDelta label="Final Top K" before={`${experiments.A.topK}`} after={`${experiments.B.topK}`} />
                 </div>
-                <QuestionBox query={query} setQuery={(value) => setQuery(value)} run={() => setNotice("Both experiments recalculated with local retrieval and the same local second-pass reranker.")} busy={false} buttonLabel="Refresh comparison" />
+                <QuestionBox query={query} setQuery={updateQuestion} run={() => setNotice("Both experiments recalculated with local retrieval and the same local second-pass reranker.")} busy={false} buttonLabel="Refresh comparison" />
                 <div className="compare-grid">{comparisons.map((item) => <article className={`compare-card ${activeExperiment === item.name ? "selected" : ""}`} key={item.name}>
                   <header><div><strong>{item.name}</strong><span>{item.name === "A" ? "BASELINE" : "CHALLENGER"}</span></div><button type="button" onClick={() => { setActiveExperiment(item.name); trackEvent("setting_changed", "compare", { setting: "experiment", value: item.name, experiment: item.name }); }}>Edit {item.name}</button></header>
                   <div className="compare-method">Experiment {item.name}<span>{item.settings.method} search</span></div>
@@ -1095,8 +1102,8 @@ function QuestionBox({ query, setQuery, run, busy, buttonLabel = "Retrieve evide
   return <div className="query-box"><span>YOUR QUESTION</span><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Question" /><button type="button" onClick={run} disabled={busy || !query.trim()}>{busy ? "Working…" : buttonLabel}</button></div>;
 }
 
-function QuestionSummary({ query, onEdit }: { query: string; onEdit: () => void }) {
-  return <div className="question-summary"><span>YOUR QUESTION · FROM STEP 02</span><strong>{query}</strong><button type="button" onClick={onEdit}>Edit question</button></div>;
+function QuestionSummary({ query, setQuery }: { query: string; setQuery: (value: string) => void }) {
+  return <label className="question-summary"><span>YOUR QUESTION · EDIT ANY TIME</span><input value={query} onChange={(event) => setQuery(event.target.value)} aria-label="Question" /><small>Changing this makes the dependent steps stale.</small></label>;
 }
 
 function RetrievalMap({ chunks, points, queryPoint, candidates, topChunks, topK, query }: { chunks: RagChunk[]; points: Array<{ x: number; y: number }>; queryPoint: { x: number; y: number }; candidates: RankedChunk[]; topChunks: RerankedChunk[]; topK: number; query: string }) {
